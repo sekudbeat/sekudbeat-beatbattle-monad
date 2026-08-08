@@ -1,5 +1,24 @@
 # Beat Arena — backend
 
+## About Sekud Beat
+
+**sek·ud** [sê-kud] · *adjective* — in Indonesian slang, "sekud" (or "sekot") means cool,
+stylish, or trendy; commonly used to describe something or someone that looks impressive, or
+up-to-date with current trends.
+
+**sekud beat**, established in 2019, specializes in audio solutions for Web3 and Web2, talent
+incubation, and music performance. Since 2019, Sekud Beat has gained recognition in the Web3
+space, emerging as a prominent music movement initiator across various blockchains such as
+Tezos, Harmony Protocol, Algorand, and more. With over 20 talents developed and partnered with
+30+ companies, Sekud Beat has built a solid reputation for innovation and quality in the
+industry.
+
+Beat Arena is Sekud Beat's playable extension of that same mission — a skill-based beat-making
+battle game ("can you cook harder than the AI?") bringing that Web3-native music ethos to a
+game format, now building toward Monad.
+
+## What's in this repo
+
 API-only Next.js app for the Beat Arena prototype: wallet-based profiles (MetaMask sign-in,
 no gas, no transactions), avatar uploads, and a real per-difficulty leaderboard shared across
 every player who hits this deployment.

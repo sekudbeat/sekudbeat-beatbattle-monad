@@ -216,6 +216,30 @@
     <button class="btn-primary" id="btn-tutorial-done">Got it — let's play ↗</button>
   </div>
 
+  <!-- SCREEN: ABOUT -->
+  <div class="screen" id="screen-about">
+    <h1 class="logo" style="font-size:18px">ABOUT SEKUD BEAT</h1>
+    <div class="tagline" style="font-style:italic">sek·ud [sê-kud] · adjective</div>
+
+    <div class="adv-section">
+      <div class="tut-line">• In Indonesian slang, "sekud" (or "sekot") means cool, stylish, or trendy — commonly used to describe something or someone that looks impressive, or up-to-date with current trends.</div>
+    </div>
+
+    <div class="adv-section">
+      <div class="adv-title">Who we are<span class="adv-sub">circa 2019 —</span></div>
+      <div class="tut-line">• <b>sekud beat</b>, established in 2019, specializes in audio solutions for Web3 and Web2, talent incubation, and music performance.</div>
+      <div class="tut-line">• Since 2019, Sekud Beat has gained recognition in the Web3 space, emerging as a prominent music movement initiator across various blockchains such as Tezos, Harmony Protocol, Algorand, and more.</div>
+      <div class="tut-line">• With over 20 talents developed and partnered with 30+ companies, Sekud Beat has built a solid reputation for innovation and quality in the industry.</div>
+    </div>
+
+    <div class="adv-section">
+      <div class="adv-title">This game</div>
+      <div class="tut-line">• Beat Arena is Sekud Beat's playable extension of that same mission — bringing the "can you cook harder than the AI?" spirit of skill-based beat-making to a Web3-native game, now building toward Monad.</div>
+    </div>
+
+    <button class="btn-secondary" id="btn-about-back">Back to setup</button>
+  </div>
+
   <!-- SCREEN 1: SETUP -->
   <div class="screen active" id="screen-setup">
     <div style="text-align:center; margin-bottom:2px;">
@@ -228,6 +252,7 @@
       <button class="icon-btn" id="open-leaderboard-btn">🏆 Leaderboard</button>
       <button class="icon-btn" id="open-marketplace-btn">🛒 Marketplace</button>
       <button class="icon-btn" id="open-tutorial-btn">❓ How to play</button>
+      <button class="icon-btn" id="open-about-btn">ℹ️ About</button>
     </div>
 
     <div class="adv-section" id="library-section">
@@ -1576,6 +1601,11 @@ document.getElementById("btn-tutorial-done").onclick = () => {
 try {
   if (!localStorage.getItem(TUTORIAL_SEEN_KEY)) showScreen("screen-tutorial");
 } catch (e) { /* localStorage unavailable (e.g. private mode) — just skip the auto-show */ }
+
+/* ---------- about ---------- */
+
+document.getElementById("open-about-btn").onclick = () => showScreen("screen-about");
+document.getElementById("btn-about-back").onclick = () => showScreen("screen-setup");
 
 
 /* ==================================================================
