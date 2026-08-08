@@ -3,12 +3,15 @@
 // GET  /api/ghost?id=<ghostId>         -> one ghost's full event log + arrangement (fetched only when someone taps "Challenge")
 // POST /api/ghost                      -> save a ghost recording for the signed-in wallet
 //
-// Mirrors pages/api/score.js and pages/api/leaderboard.js exactly: same kv
-// sorted-set pattern, same requireAuth() session check, same score-clamping
-// approach (client-trusted, same as score.js's existing TODO/anti-cheat note).
+// Mirrors pages/api/score.js and pages/api/leaderboard.js: same kv
+// sorted-set pattern, same requireAuth() session check, and — like
+// score.js — the score is recomputed server-side from the submitted
+// mode/picks/advanced/finalArrangement rather than trusted from the client.
 
 import { kv } from "../../lib/kv";
 import { requireAuth } from "../../lib/auth";
+import { reconstructPattern, isValidArrangement, isValidSampleAssign } from "../../lib/pattern";
+import { scoreArrangement } from "../../lib/scoring";
 import crypto from "crypto";
 
 const VALID_DIFFICULTIES = ["newbie", "rookie", "pro", "legend"];
@@ -70,28 +73,40 @@ async function handlePost(req, res) {
   const address = requireAuth(req, res);
   if (!address) return;
 
-  const { difficulty, score, mode, picks, advanced, finalArrangement, events, durationMs } = req.body || {};
+  const { difficulty, mode, picks, advanced, finalArrangement, sampleAssign, events, durationMs } = req.body || {};
 
   if (!VALID_DIFFICULTIES.includes(difficulty)) {
     return res.status(400).json({ error: `difficulty must be one of ${VALID_DIFFICULTIES.join(", ")}` });
   }
-  if (!finalArrangement || !Array.isArray(events)) {
-    return res.status(400).json({ error: "finalArrangement and events are required" });
+  if (!Array.isArray(events)) {
+    return res.status(400).json({ error: "events is required" });
   }
   if (events.length > MAX_EVENTS) {
     return res.status(413).json({ error: `Event log too large (max ${MAX_EVENTS})` });
   }
 
-  // same trust model as pages/api/score.js's existing TODO — client-supplied
-  // score, clamped to a sane range. See lib/scoring.js if you later want to
-  // recompute this server-side the way the file's comment describes.
-  const clampedScore = Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
+  // Same anti-cheat approach as pages/api/score.js: recompute the score
+  // server-side from the submitted pattern-building inputs instead of
+  // trusting whatever number the client attaches, since this score also
+  // seeds the async "Challenge Ghost" leaderboard.
+  const pattern = reconstructPattern({ mode, picks, advanced });
+  if (!pattern) {
+    return res.status(400).json({ error: "Invalid or missing mode/picks/advanced — could not reconstruct pattern" });
+  }
+  if (!isValidArrangement(finalArrangement)) {
+    return res.status(400).json({ error: "Invalid or missing finalArrangement" });
+  }
+  if (!isValidSampleAssign(sampleAssign)) {
+    return res.status(400).json({ error: "Invalid sampleAssign" });
+  }
+
+  const score = scoreArrangement(pattern, finalArrangement, sampleAssign || {});
   const id = crypto.randomUUID();
 
   const ghost = {
     address,
     difficulty,
-    score: clampedScore,
+    score,
     mode: mode === "advanced" ? "advanced" : "beginner",
     picks: picks || null,
     advanced: advanced || null,
@@ -102,7 +117,7 @@ async function handlePost(req, res) {
   };
 
   await kv.set(`ghost:${id}`, JSON.stringify(ghost));
-  await kv.zadd(`ghosts:${difficulty}`, { score: clampedScore, member: id });
+  await kv.zadd(`ghosts:${difficulty}`, { score, member: id });
 
-  res.status(201).json({ ok: true, ghostId: id });
+  res.status(201).json({ ok: true, ghostId: id, score });
 }
