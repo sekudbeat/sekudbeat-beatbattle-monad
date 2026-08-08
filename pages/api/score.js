@@ -1,5 +1,7 @@
 import { kv } from "../../lib/kv";
 import { requireAuth } from "../../lib/auth";
+import { reconstructPattern, isValidArrangement, isValidSampleAssign } from "../../lib/pattern";
+import { scoreArrangement } from "../../lib/scoring";
 
 const VALID_DIFFICULTIES = ["newbie", "rookie", "pro", "legend"];
 
@@ -8,23 +10,34 @@ export default async function handler(req, res) {
   const address = requireAuth(req, res);
   if (!address) return;
 
-  const { difficulty, score } = req.body || {};
+  const { difficulty, mode, picks, advanced, arrangement, sampleAssign } = req.body || {};
   if (!VALID_DIFFICULTIES.includes(difficulty)) {
     return res.status(400).json({ error: `difficulty must be one of ${VALID_DIFFICULTIES.join(", ")}` });
   }
 
-  // TODO(anti-cheat): this trusts whatever number the client sends. Fine for
-  // a casual prototype, but anyone can call this endpoint directly and post
-  // score:100. To harden it: accept the arrangement + pattern data instead of
-  // a bare number, and recompute the score here with lib/scoring.js — only
-  // trust that recomputed value. See lib/scoring.js for the ported formula.
-  const clamped = Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
+  // Anti-cheat: the client no longer gets to just say "score: 100". It sends
+  // the same { mode, picks/advanced, arrangement, sampleAssign } shape the
+  // frontend already builds internally, and we recompute the score here
+  // with the identical formula (lib/scoring.js, ported from game.html) —
+  // only that recomputed number is ever trusted or stored.
+  const pattern = reconstructPattern({ mode, picks, advanced });
+  if (!pattern) {
+    return res.status(400).json({ error: "Invalid or missing mode/picks/advanced — could not reconstruct pattern" });
+  }
+  if (!isValidArrangement(arrangement)) {
+    return res.status(400).json({ error: "Invalid or missing arrangement" });
+  }
+  if (!isValidSampleAssign(sampleAssign)) {
+    return res.status(400).json({ error: "Invalid sampleAssign" });
+  }
+
+  const score = scoreArrangement(pattern, arrangement, sampleAssign || {});
 
   const lbKey = `leaderboard:${difficulty}`;
   const current = await kv.zscore(lbKey, address);
-  if (current === null || clamped > current) {
-    await kv.zadd(lbKey, { score: clamped, member: address });
+  if (current === null || score > current) {
+    await kv.zadd(lbKey, { score, member: address });
   }
 
-  res.status(200).json({ ok: true, best: Math.max(current || 0, clamped) });
+  res.status(200).json({ ok: true, score, best: Math.max(current || 0, score) });
 }

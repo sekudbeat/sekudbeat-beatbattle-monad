@@ -373,15 +373,41 @@ const BAND_DEFS = {
 
 function genId() { return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ("id" + Date.now() + Math.random()); }
 
+// Each tier has a few hand-authored arrangement variants of roughly equal
+// difficulty (rather than one fixed template) so the AI's structural arc
+// isn't byte-identical every single match at a given tier — the sound
+// already varies per match via randomAiPicks(), but before this the
+// section-by-section on/off shape didn't. arrangementForDifficulty() below
+// picks one at random per round. This is still a hand-tuned approximation,
+// not a live win-rate-calibrated system — see CLAUDE.md/PRODUCT.md's open
+// "make AI difficulty feel fair and consistent" item for the real fix
+// (tracking human win rate per tier from the leaderboard data and adjusting
+// these from that).
 const DIFFICULTIES = [
   { key:"newbie", label:"Newbie", blurb:"Sloppy — plays a few drum hits then just gives up.",
-    template:{ drums:[true,false,false], chords:[false,false,false], bass:[false,false,false], melody:[false,false,false] } },
+    templates: [
+      { drums:[true,false,false], chords:[false,false,false], bass:[false,false,false], melody:[false,false,false] },
+      { drums:[true,true,false],  chords:[false,false,false], bass:[false,false,false], melody:[false,false,false] },
+      { drums:[true,false,false], chords:[false,false,true],  bass:[false,false,false], melody:[false,false,false] },
+    ] },
   { key:"rookie", label:"Rookie", blurb:"Decent — has a beat going, but never brings the melody in.",
-    template:{ drums:[true,true,true], chords:[false,false,true], bass:[false,true,true], melody:[false,false,false] } },
+    templates: [
+      { drums:[true,true,true], chords:[false,false,true], bass:[false,true,true],  melody:[false,false,false] },
+      { drums:[true,true,true], chords:[false,true,true],  bass:[false,false,true], melody:[false,false,false] },
+      { drums:[true,true,true], chords:[false,false,true], bass:[true,true,true],   melody:[false,false,false] },
+    ] },
   { key:"pro", label:"Pro", blurb:"Tight — a real intro-build-drop arc with every layer in play.",
-    template:{ drums:[true,true,true], chords:[false,true,true], bass:[true,true,true], melody:[false,false,true] } },
+    templates: [
+      { drums:[true,true,true], chords:[false,true,true], bass:[true,true,true],  melody:[false,false,true] },
+      { drums:[true,true,true], chords:[true,true,true],  bass:[false,true,true], melody:[false,false,true] },
+      { drums:[true,true,true], chords:[false,true,true], bass:[true,true,true],  melody:[false,true,true] },
+    ] },
   { key:"legend", label:"Legend", blurb:"Note-perfect — dense, layered, barely a weak moment.",
-    template:{ drums:[true,true,true], chords:[true,true,true], bass:[true,true,true], melody:[false,true,true] } },
+    templates: [
+      { drums:[true,true,true], chords:[true,true,true],  bass:[true,true,true], melody:[false,true,true] },
+      { drums:[true,true,true], chords:[true,true,true],  bass:[true,true,true], melody:[true,true,true] },
+      { drums:[true,true,true], chords:[false,true,true], bass:[true,true,true], melody:[true,true,true] },
+    ] },
 ];
 
 /* ---------- state ---------- */
@@ -1096,7 +1122,11 @@ function randomAiPicks() {
 }
 
 function getDifficulty(key) { return DIFFICULTIES.find(d => d.key === key) || DIFFICULTIES[0]; }
-function arrangementForDifficulty(key) { return JSON.parse(JSON.stringify(getDifficulty(key).template)); }
+function arrangementForDifficulty(key) {
+  const templates = getDifficulty(key).templates;
+  const pick = templates[Math.floor(Math.random() * templates.length)];
+  return JSON.parse(JSON.stringify(pick));
+}
 
 function renderDiffPills() {
   const wrap = document.getElementById("diff-pills");
@@ -1321,8 +1351,8 @@ function showResult(yourScore, aiScore, tierLabel) {
     ? (win ? ("You beat the " + tierLabel + "!") : (tierLabel + " beat you!"))
     : (win ? ("You beat the " + tierLabel + " AI!") : ("The " + tierLabel + " AI beat you"));
   (async () => {
-    if (window.ghostFeatures) await window.ghostFeatures.onRoundEnd(yourScore);
-    recordScore(state.aiDifficulty, yourScore);
+    if (window.ghostFeatures) await window.ghostFeatures.onRoundEnd();
+    recordScore(state.aiDifficulty);
   })();
 }
 
@@ -1543,12 +1573,23 @@ async function uploadAvatar(dataUrl) {
   return res.json();
 }
 
-async function recordScore(difficultyKey, score) {
+async function recordScore(difficultyKey) {
   if (!walletAddress) return;
   try {
+    // Anti-cheat: the server no longer trusts a bare score number — it sends
+    // back its own recomputed score derived from these pattern-building
+    // inputs (see pages/api/score.js + lib/scoring.js). The locally computed
+    // score is still used for the reveal/result screens' immediate UI.
     await api("/api/score", {
       method:"POST", headers:{ "Content-Type":"application/json" },
-      body:JSON.stringify({ difficulty:difficultyKey, score }),
+      body:JSON.stringify({
+        difficulty: difficultyKey,
+        mode: state.mode,
+        picks: state.mode === "beginner" ? state.picks : null,
+        advanced: state.mode === "advanced" ? state.advanced : null,
+        arrangement: state.arrangement,
+        sampleAssign: state.sampleAssign,
+      }),
     });
     await refreshMyScores();
   } catch (e) { backendReachable = false; }

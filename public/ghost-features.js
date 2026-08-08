@@ -36,16 +36,20 @@
     recording.events.push({ t: Math.round(performance.now() - recording.startTime), layer, section, on });
   }
 
-  async function onRoundEnd(yourScore) {
+  async function onRoundEnd() {
     stopGhostReplay();
     if (!recording || !walletAddress) return;
+    // yourScore isn't sent — the server recomputes the ghost's score itself
+    // from mode/picks/advanced/finalArrangement/sampleAssign the same way
+    // pages/api/score.js does (see lib/scoring.js + lib/pattern.js), so a
+    // saved ghost can't be planted with an inflated score either.
     const payload = {
       difficulty: state.aiDifficulty,
-      score: yourScore,
       mode: recording.mode,
       picks: recording.picks,
       advanced: recording.advanced,
       finalArrangement: JSON.parse(JSON.stringify(state.arrangement)),
+      sampleAssign: JSON.parse(JSON.stringify(state.sampleAssign)),
       events: recording.events,
       durationMs: Math.round(performance.now() - recording.startTime),
     };

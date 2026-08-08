@@ -8,14 +8,14 @@
     "start": "next start"
   },
   "dependencies": {
-    "next": "^14.2.35",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
     "@upstash/redis": "^1.34.3",
     "@vercel/blob": "^0.23.4",
+    "cookie": "^0.6.0",
     "ethers": "^6.13.1",
     "jsonwebtoken": "^9.0.2",
-    "cookie": "^0.6.0"
+    "next": "^14.2.35",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   },
   "description": "API-only Next.js app for the Beat Arena prototype: wallet-based profiles (MetaMask sign-in, no gas, no transactions), avatar uploads, and a real per-difficulty leaderboard shared across every player who hits this deployment.",
   "main": "next.config.js",
@@ -24,5 +24,9 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "@openzeppelin/contracts": "^5.6.1",
+    "dotenv": "^17.4.2"
+  }
 }
