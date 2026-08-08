@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Beat Arena — Solo Battle (prototype)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
@@ -271,6 +272,8 @@
     </div>
     <button class="btn-primary" id="btn-rematch">Rematch ↗</button>
     <button class="btn-secondary" id="btn-resetup">New setup</button>
+    <button class="btn-secondary" id="btn-mint-chart" style="margin-top:8px">🪙 Mint this beat (Monad testnet)</button>
+    <div class="hint" id="mint-status" style="margin-top:8px"></div>
   </div>
 
   <!-- SCREEN 5: EXTRACT STEMS -->
@@ -580,9 +583,15 @@ function ensureSamplePlayers() {
 }
 
 function setSampleVolumesForSection(active) {
+  // Ramped, not snapped: uploaded sample layers loop continuously under the
+  // hood and are just volume-gated per section (see ensureSamplePlayers), so
+  // an instant value jump to/from silence produces an audible click at every
+  // section boundary. -60dB is already inaudible, so a short ramp there
+  // (rather than -Infinity, which a linear ramp can't approach cleanly)
+  // avoids the pop without leaving anything audibly un-muted.
   Object.keys(samplePlayers).forEach(layer => {
     const p = samplePlayers[layer];
-    if (p) p.volume.value = active[layer] ? 0 : -Infinity;
+    if (p) p.volume.rampTo(active[layer] ? 0 : -60, 0.05);
   });
 }
 function muteAllSamples() { Object.values(samplePlayers).forEach(p => { if (p) p.volume.value = -Infinity; }); }
@@ -994,12 +1003,16 @@ function renderDrumEditor() {
     cells.className = "drum-cells";
     for (let i = 0; i < 16; i++) {
       const cell = document.createElement("div");
-      const v = state.advanced.drums[layer][i];
-      cell.className = "drum-cell" + (i % 4 === 0 ? " beat0" : "") + (v >= 1 ? " v2" : v > 0 ? " v1" : "");
+      const drumCellClass = (v) => "drum-cell" + (i % 4 === 0 ? " beat0" : "") + (v >= 1 ? " v2" : v > 0 ? " v1" : "");
+      cell.className = drumCellClass(state.advanced.drums[layer][i]);
       cell.onclick = () => {
+        // Mutate this one cell directly instead of calling renderDrumEditor()
+        // (which used to tear down and rebuild all 48 cells on every single
+        // tap — visibly janky, and needless since only this cell changed).
         const cur = state.advanced.drums[layer][i];
-        state.advanced.drums[layer][i] = cur === 0 ? 0.6 : cur < 1 ? 1 : 0;
-        renderDrumEditor();
+        const next = cur === 0 ? 0.6 : cur < 1 ? 1 : 0;
+        state.advanced.drums[layer][i] = next;
+        cell.className = drumCellClass(next);
       };
       cells.appendChild(cell);
     }
@@ -1052,6 +1065,14 @@ function renderPianoRoll(trackKey, containerId, noteRows) {
     wireClear(container, trackKey);
     return;
   }
+  // cellsByStep[i] holds every row's cell at step i. Only one note per step
+  // can be active, so a click can only ever change cells within its own
+  // step column — repainting just those (instead of calling
+  // renderPianoRoll() and rebuilding all ~128 cells on every tap, which
+  // was visibly janky) is both correct and far cheaper.
+  const cellsByStep = Array.from({ length: 16 }, () => []);
+  const cellClass = (i, active) => "roll-cell" + (i % 4 === 0 ? " beat0" : "") + (active ? " on" : "");
+
   noteRows.forEach(note => {
     const row = document.createElement("div");
     row.className = "roll-row";
@@ -1064,13 +1085,17 @@ function renderPianoRoll(trackKey, containerId, noteRows) {
     for (let i = 0; i < 16; i++) {
       const cell = document.createElement("div");
       const active = state.advanced[trackKey][i] === note;
-      cell.className = "roll-cell" + (i % 4 === 0 ? " beat0" : "") + (active ? " on" : "");
+      cell.className = cellClass(i, active);
+      cellsByStep[i].push({ note, el: cell });
       cell.onclick = () => {
-        state.advanced[trackKey][i] = active ? null : note;
-        renderPianoRoll(trackKey, containerId, noteRows);
-        if (synths) {
+        const wasActive = state.advanced[trackKey][i] === note;
+        state.advanced[trackKey][i] = wasActive ? null : note;
+        cellsByStep[i].forEach(({ note: n, el }) => {
+          el.className = cellClass(i, state.advanced[trackKey][i] === n);
+        });
+        if (synths && !wasActive) {
           const s = trackKey === "bass" ? synths.bass : synths.melody;
-          if (!active) s.triggerAttackRelease(note, "8n");
+          s.triggerAttackRelease(note, "8n");
         }
       };
       cells.appendChild(cell);
@@ -1490,6 +1515,7 @@ let walletAddress = null;
 let myProfile = null;   // { address, name, avatarUrl }
 let myScores = {};      // { newbie: score|null, rookie: ..., pro: ..., legend: ... }
 let backendReachable = true;
+let lastVerifiedScore = null; // server-recomputed score for the round just played, for the mint button
 
 function shortAddress(addr) { return addr ? addr.slice(0,6) + "…" + addr.slice(-4) : ""; }
 
@@ -1573,24 +1599,36 @@ async function uploadAvatar(dataUrl) {
   return res.json();
 }
 
+// The same { mode, picks/advanced, arrangement, sampleAssign } shape both
+// pages/api/score.js (anti-cheat recompute) and the mint flow's contentHash
+// need — one place building it so they can't drift apart.
+function currentChartSubmission() {
+  return {
+    mode: state.mode,
+    picks: state.mode === "beginner" ? state.picks : null,
+    advanced: state.mode === "advanced" ? state.advanced : null,
+    arrangement: state.arrangement,
+    sampleAssign: state.sampleAssign,
+  };
+}
+
 async function recordScore(difficultyKey) {
+  lastVerifiedScore = null;
   if (!walletAddress) return;
   try {
     // Anti-cheat: the server no longer trusts a bare score number — it sends
     // back its own recomputed score derived from these pattern-building
     // inputs (see pages/api/score.js + lib/scoring.js). The locally computed
-    // score is still used for the reveal/result screens' immediate UI.
-    await api("/api/score", {
+    // score is still used for the reveal/result screens' immediate UI;
+    // lastVerifiedScore (the server's number) is what the mint button uses.
+    const res = await api("/api/score", {
       method:"POST", headers:{ "Content-Type":"application/json" },
-      body:JSON.stringify({
-        difficulty: difficultyKey,
-        mode: state.mode,
-        picks: state.mode === "beginner" ? state.picks : null,
-        advanced: state.mode === "advanced" ? state.advanced : null,
-        arrangement: state.arrangement,
-        sampleAssign: state.sampleAssign,
-      }),
+      body:JSON.stringify(Object.assign({ difficulty: difficultyKey }, currentChartSubmission())),
     });
+    if (res.ok) {
+      const data = await res.json();
+      lastVerifiedScore = data.score;
+    }
     await refreshMyScores();
   } catch (e) { backendReachable = false; }
 }
@@ -1608,6 +1646,128 @@ async function refreshMyScores() {
   }
   myScores = out;
 }
+
+/* ---------- Monad NFT minting (BeatChart contract) ----------
+ * One-click, player-owned: the player's own wallet signs and pays gas for
+ * the mint, so the NFT is theirs from the moment it's minted — there's no
+ * way to make this literally automatic without a server-custodial wallet
+ * (a real design tradeoff, not an oversight; see chat).
+ *
+ * "Hearing" the mint happens entirely in this app: tokenURI is a data: URI
+ * (no IPFS/hosting needed) embedding the same { mode, picks/advanced,
+ * arrangement, sampleAssign } shape the game already uses, so any page that
+ * reads it back can replay it with buildPattern/buildAdvancedPattern +
+ * scoreArrangement exactly like a ghost. Layers built from a custom
+ * uploaded sample can't be included this way (that raw audio isn't stored
+ * anywhere durable) — same limitation ghost-features.js already has for
+ * replaying those layers, called out below rather than silently dropped.
+ */
+
+let mintContractInfo = null; // cached response of GET /api/contract
+
+async function getMintContractInfo() {
+  if (mintContractInfo) return mintContractInfo;
+  const res = await api("/api/contract");
+  if (!res.ok) throw new Error("BeatChart contract info unavailable — is it deployed?");
+  mintContractInfo = await res.json();
+  return mintContractInfo;
+}
+
+async function ensureMonadNetwork(info) {
+  const currentChainId = await window.ethereum.request({ method:"eth_chainId" });
+  if (currentChainId.toLowerCase() === info.chainIdHex.toLowerCase()) return;
+  try {
+    await window.ethereum.request({ method:"wallet_switchEthereumChain", params:[{ chainId:info.chainIdHex }] });
+  } catch (switchErr) {
+    if (switchErr.code === 4902) {
+      await window.ethereum.request({
+        method:"wallet_addEthereumChain",
+        params:[{
+          chainId: info.chainIdHex,
+          chainName: "Monad Testnet",
+          nativeCurrency: info.currency,
+          rpcUrls: [info.rpcUrl],
+          blockExplorerUrls: [info.explorerUrl],
+        }],
+      });
+    } else {
+      throw switchErr;
+    }
+  }
+}
+
+// Deterministic, key-order-independent JSON so identical chart content
+// always hashes the same regardless of how the object was built.
+function canonicalStringify(value) {
+  if (Array.isArray(value)) return "[" + value.map(canonicalStringify).join(",") + "]";
+  if (value && typeof value === "object") {
+    return "{" + Object.keys(value).sort().map(k => JSON.stringify(k) + ":" + canonicalStringify(value[k])).join(",") + "}";
+  }
+  return JSON.stringify(value);
+}
+
+function usesCustomSamples(submission) {
+  return Object.values(submission.sampleAssign || {}).some(Boolean);
+}
+
+async function mintCurrentChart() {
+  const statusEl = document.getElementById("mint-status");
+  const btn = document.getElementById("btn-mint-chart");
+  if (!window.ethereum) { statusEl.textContent = "MetaMask not detected — install it from metamask.io."; return; }
+  if (!walletAddress) { statusEl.textContent = "Connect your wallet first (Profile tab), then come back and mint."; return; }
+  if (lastVerifiedScore == null) { statusEl.textContent = "No server-verified score for this round yet — try Rematch."; return; }
+  if (typeof ethers === "undefined") { statusEl.textContent = "Wallet library failed to load — check your connection and reload."; return; }
+
+  const submission = currentChartSubmission();
+  const hasCustomSamples = usesCustomSamples(submission);
+
+  btn.disabled = true;
+  statusEl.textContent = "Preparing mint…";
+  try {
+    const info = await getMintContractInfo();
+    await ensureMonadNetwork(info);
+
+    const contentHash = ethers.keccak256(ethers.toUtf8Bytes(canonicalStringify(submission)));
+    const metadata = {
+      name: "Sekud Beat Arena Chart",
+      description:
+        `A ${state.aiDifficulty} tier beat built in Sekud Beat Arena — score ${lastVerifiedScore}/100.` +
+        (hasCustomSamples
+          ? " Note: this chart uses custom uploaded samples that aren't stored on-chain or in this metadata, so in-app replay only covers the preset-based layers."
+          : ""),
+      attributes: [
+        { trait_type:"Difficulty", value: state.aiDifficulty },
+        { trait_type:"Score", value: lastVerifiedScore },
+        { trait_type:"Mode", value: state.mode },
+      ],
+      sekudbeat_chart_data: submission,
+    };
+    const tokenURI = "data:application/json;base64," + btoa(unescape(encodeURIComponent(JSON.stringify(metadata))));
+
+    statusEl.textContent = "Confirm the transaction in MetaMask…";
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const contract = new ethers.Contract(info.address, info.abi, signer);
+    const tx = await contract.mint(contentHash, lastVerifiedScore, state.aiDifficulty, tokenURI);
+
+    statusEl.textContent = "Waiting for confirmation… (tx " + tx.hash.slice(0, 10) + "…)";
+    const receipt = await tx.wait();
+    statusEl.innerHTML = `Minted ↗ <a href="${info.explorerUrl}/tx/${receipt.hash}" target="_blank" rel="noopener">view on explorer</a>`;
+  } catch (e) {
+    const reason = (e && (e.shortMessage || e.reason)) || (e && e.message) || "unknown error";
+    if (reason.includes("already minted")) {
+      statusEl.textContent = "This exact arrangement is already minted (identical content was minted before).";
+    } else if (e && (e.code === 4001 || e.code === "ACTION_REJECTED")) {
+      statusEl.textContent = "Mint cancelled.";
+    } else {
+      statusEl.textContent = "Mint failed: " + reason;
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("btn-mint-chart").onclick = mintCurrentChart;
 
 function renderProfile() {
   document.getElementById("storage-banner-profile").textContent = backendReachable
