@@ -496,10 +496,13 @@ function makePlayerNode(item, opts) {
     const origDispose = vol.dispose.bind(vol);
     vol.stop = () => { try { audioEl.pause(); } catch (e) {} };
     vol.dispose = () => { try { audioEl.pause(); audioEl.src = ""; } catch (e) {} origDispose(); };
+    vol.seek = () => { try { audioEl.currentTime = 0; } catch (e) {} };
     vol._audioEl = audioEl;
     return vol;
   }
-  return new Tone.Player({ url:item.objectUrl, loop:!!opts.loop, autostart:!!opts.autostart });
+  const p = new Tone.Player({ url:item.objectUrl, loop:!!opts.loop, autostart:!!opts.autostart });
+  p.seek = () => { try { p.restart(); } catch (e) {} };
+  return p;
 }
 
 // Tries to decode a freshly-uploaded file via Web Audio; if that fails, checks whether
@@ -664,8 +667,28 @@ function stopSequence() {
 function startLiveBuildLoop(pattern, onStep) {
   stopSequence();
   Tone.Transport.bpm.value = state.bpm;
+  let quantizedSection = state.currentSection;
   seq = new Tone.Sequence((time, s) => {
-    const sec = state.currentSection;
+    if (s === 0 && quantizedSection !== state.currentSection) {
+      const prevSection = quantizedSection;
+      quantizedSection = state.currentSection;
+      // any layer newly turning on this bar restarts its sample from the top —
+      // a clean "drop" instead of resuming wherever the file happened to be
+      ["drums","chords","bass","melody"].forEach(layer => {
+        const wasOn = state.arrangement[layer][prevSection];
+        const nowOn = state.arrangement[layer][quantizedSection];
+        const player = samplePlayers[layer];
+        if (!wasOn && nowOn && player && player.seek) {
+          Tone.Draw.schedule(() => player.seek(), time);
+        }
+      });
+      const newActive = {
+        drums: state.arrangement.drums[quantizedSection], chords: state.arrangement.chords[quantizedSection],
+        bass: state.arrangement.bass[quantizedSection], melody: state.arrangement.melody[quantizedSection],
+      };
+      Tone.Draw.schedule(() => setSampleVolumesForSection(newActive), time);
+    }
+    const sec = quantizedSection;
     const active = {
       drums: state.arrangement.drums[sec], chords: state.arrangement.chords[sec],
       bass: state.arrangement.bass[sec], melody: state.arrangement.melody[sec],
@@ -1222,7 +1245,6 @@ function runTimer() {
       state.currentSection = newSection;
       renderSectionPills();
       updateLiveHype();
-      setSampleVolumesForSection(currentActiveMask());
     }
     if (state.timeLeft <= 0) {
       clearInterval(state.timerHandle);
@@ -1249,8 +1271,14 @@ function goToReveal() {
 
   applyDefaultFX();
   document.getElementById("reveal-status").textContent = "Your intro...";
+  let prevActive = { drums:false, chords:false, bass:false, melody:false };
   playSectionsForSide(playerPattern, state.arrangement, (label, sec, active) => {
     document.getElementById("reveal-status").textContent = "Your " + label.toLowerCase() + "...";
+    ["drums","chords","bass","melody"].forEach(layer => {
+      const player = samplePlayers[layer];
+      if (!prevActive[layer] && active[layer] && player && player.seek) player.seek();
+    });
+    prevActive = active;
     setSampleVolumesForSection(active);
   }, () => {
     muteAllSamples();
