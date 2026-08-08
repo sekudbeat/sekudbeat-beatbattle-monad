@@ -104,6 +104,9 @@
   .adv-title { font-size: 13px; color: #D6D6EA; margin-bottom: 8px; }
   .adv-title .adv-sub { display: block; font-size: 11px; color: #6a6a82; font-weight: 400; margin-top: 2px; }
 
+  .tut-line { font-size: 13px; color: #B4B4CC; line-height: 1.55; margin-bottom: 7px; padding-left: 16px; text-indent: -16px; }
+  .tut-line b { color: #D6D6EA; }
+
   .drum-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
   .drum-row .rlabel { width: 46px; font-size: 11px; color: #B4B4CC; flex-shrink: 0; }
   .drum-cells { display: flex; gap: 2px; flex: 1; }
@@ -166,6 +169,52 @@
 <body>
 <div class="app">
 
+  <!-- SCREEN 0: TUTORIAL -->
+  <div class="screen" id="screen-tutorial">
+    <h1 class="logo" style="font-size:18px">HOW TO PLAY</h1>
+    <div class="tagline">Can you cook harder than the AI?</div>
+
+    <div class="adv-section">
+      <div class="adv-title">The goal</div>
+      <div class="tut-line">• You and an AI opponent (or a real recorded "ghost" player) get <b>30 seconds</b> to build a beat out of the same material.</div>
+      <div class="tut-line">• Both beats get scored with the exact same formula. Highest score wins the round.</div>
+    </div>
+
+    <div class="adv-section">
+      <div class="adv-title">The 30-second build<span class="adv-sub">split into three 10-second sections: Intro → Build → Drop</span></div>
+      <div class="tut-line">• Pick which layers — <b>drums, chords, bass, melody</b> — are turned on in each of the three sections. A track that builds up (fewer layers in the intro, more by the drop) scores a variety bonus over one that's flat the whole way through.</div>
+      <div class="tut-line">• Tap a section pill anytime during the build to jump there and toggle its layers.</div>
+    </div>
+
+    <div class="adv-section">
+      <div class="adv-title">Beginner vs Advanced mode</div>
+      <div class="tut-line">• <b>Beginner:</b> pick one preset per layer (a drum pattern, a chord progression, a bass style, a melody) — fast, no music theory needed.</div>
+      <div class="tut-line">• <b>Advanced:</b> program every layer yourself — a 16-step drum grid, chord slots, bass/melody piano rolls, and per-layer filter/reverb — for full control over the sound.</div>
+      <div class="tut-line">• Either mode, you can also upload your own audio in the Music Library and assign it to a layer instead of a preset — or extract a stem (bass/chords/melody/drums frequency band) from a track you upload.</div>
+    </div>
+
+    <div class="adv-section">
+      <div class="adv-title">Scoring, roughly</div>
+      <div class="tut-line">• More active layers per section score higher, up to a point — a section crammed with every layer isn't automatically the best.</div>
+      <div class="tut-line">• A good note/beat density (not too sparse, not overstuffed) earns a bonus each section.</div>
+      <div class="tut-line">• Varying which layers are active across the three sections (an actual arc, not the same thing three times) earns an extra bonus on top.</div>
+    </div>
+
+    <div class="adv-section">
+      <div class="adv-title">Opponents</div>
+      <div class="tut-line">• <b>AI tiers</b> — Newbie, Rookie, Pro, Legend — each play a randomized but tier-appropriate arrangement, so it's not the identical opponent every match.</div>
+      <div class="tut-line">• <b>Ghost challenges</b> (from the Leaderboard screen) — replay a real recorded human round instead of the AI, toggle-for-toggle, and try to beat their score.</div>
+    </div>
+
+    <div class="adv-section">
+      <div class="adv-title">Wallet, leaderboard &amp; minting</div>
+      <div class="tut-line">• Connect MetaMask (Profile tab) to save your best score per difficulty to the shared leaderboard — everyone's scores are recomputed and verified server-side, not just trusted from the browser.</div>
+      <div class="tut-line">• After a round, you can mint your beat as an NFT on <b>Monad testnet</b> — you own it, with a 5% creator royalty baked in for any future resale.</div>
+    </div>
+
+    <button class="btn-primary" id="btn-tutorial-done">Got it — let's play ↗</button>
+  </div>
+
   <!-- SCREEN 1: SETUP -->
   <div class="screen active" id="screen-setup">
     <div style="text-align:center; margin-bottom:2px;">
@@ -176,6 +225,7 @@
     <div class="header-row">
       <button class="icon-btn" id="open-profile-btn">👤 Profile</button>
       <button class="icon-btn" id="open-leaderboard-btn">🏆 Leaderboard</button>
+      <button class="icon-btn" id="open-tutorial-btn">❓ How to play</button>
     </div>
 
     <div class="adv-section" id="library-section">
@@ -1502,6 +1552,18 @@ renderModeToggle();
 renderSetupRows();
 renderDiffPills();
 renderLibrary();
+
+/* ---------- tutorial ---------- */
+
+const TUTORIAL_SEEN_KEY = "sekudbeat_seen_tutorial";
+document.getElementById("open-tutorial-btn").onclick = () => showScreen("screen-tutorial");
+document.getElementById("btn-tutorial-done").onclick = () => {
+  try { localStorage.setItem(TUTORIAL_SEEN_KEY, "1"); } catch (e) {}
+  showScreen("screen-setup");
+};
+try {
+  if (!localStorage.getItem(TUTORIAL_SEEN_KEY)) showScreen("screen-tutorial");
+} catch (e) { /* localStorage unavailable (e.g. private mode) — just skip the auto-show */ }
 
 
 /* ==================================================================
