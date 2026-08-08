@@ -304,6 +304,8 @@
     <div class="storage-banner" id="storage-banner-lb"></div>
     <div class="pills" id="lb-diff-pills" style="margin-bottom:14px; justify-content:center"></div>
     <div id="lb-list"></div>
+    <div class="row-label" style="margin-top:18px">👻 Ghost challenges — race their build</div>
+    <div id="ghost-list"></div>
     <button class="btn-secondary" id="btn-lb-refresh">Refresh</button>
     <button class="btn-secondary" id="btn-lb-back">Back to setup</button>
   </div>
@@ -1156,6 +1158,7 @@ function renderArrGrid() {
       cell.className = "arr-cell" + (state.arrangement[row.key][sec] ? " on" : "");
       cell.onclick = () => {
         state.arrangement[row.key][sec] = !state.arrangement[row.key][sec];
+        if (window.ghostFeatures) window.ghostFeatures.logToggle(row.key, sec, state.arrangement[row.key][sec]);
         renderArrGrid();
         updateLiveHype();
         setSampleVolumesForSection(currentActiveMask());
@@ -1216,6 +1219,7 @@ document.getElementById("btn-start").onclick = async () => {
   state.timeLeft = 30;
   state.currentSection = 0;
   showScreen("screen-build");
+  if (window.ghostFeatures) window.ghostFeatures.onBuildStart();
   renderSectionPills();
   renderPlayhead();
   renderArrGrid();
@@ -1260,11 +1264,20 @@ function goToReveal() {
   document.getElementById("meter-you").style.width = "0%";
   document.getElementById("meter-ai").style.width = "0%";
 
-  aiPicks = randomAiPicks();
-  aiPattern = buildPattern(aiPicks);
-  aiArrangement = arrangementForDifficulty(state.aiDifficulty);
-  const tierLabel = getDifficulty(state.aiDifficulty).label;
-  document.querySelector("#screen-reveal .vs-wrap:last-of-type .vs-label").textContent = "AI OPPONENT · " + tierLabel.toUpperCase();
+  const ghostOpponent = window.ghostFeatures ? window.ghostFeatures.getOpponent() : null;
+  let tierLabel;
+  if (ghostOpponent) {
+    aiPattern = ghostOpponent.pattern;
+    aiArrangement = ghostOpponent.arrangement;
+    tierLabel = ghostOpponent.label;
+  } else {
+    aiPicks = randomAiPicks();
+    aiPattern = buildPattern(aiPicks);
+    aiArrangement = arrangementForDifficulty(state.aiDifficulty);
+    tierLabel = getDifficulty(state.aiDifficulty).label;
+  }
+  document.querySelector("#screen-reveal .vs-wrap:last-of-type .vs-label").textContent =
+    ghostOpponent ? tierLabel.toUpperCase() : "AI OPPONENT · " + tierLabel.toUpperCase();
 
   const yourScore = scoreArrangement(playerPattern, state.arrangement, state.sampleAssign);
   const aiScore = scoreArrangement(aiPattern, aiArrangement);
@@ -1303,8 +1316,14 @@ function showResult(yourScore, aiScore, tierLabel) {
   document.getElementById("score-ai").textContent = aiScore;
   const win = yourScore >= aiScore;
   banner.className = "result-banner " + (win ? "win" : "lose");
-  title.textContent = win ? ("You beat the " + tierLabel + " AI!") : ("The " + tierLabel + " AI beat you");
-  recordScore(state.aiDifficulty, yourScore);
+  const isGhost = tierLabel.indexOf("GHOST") === 0;
+  title.textContent = isGhost
+    ? (win ? ("You beat the " + tierLabel + "!") : (tierLabel + " beat you!"))
+    : (win ? ("You beat the " + tierLabel + " AI!") : ("The " + tierLabel + " AI beat you"));
+  (async () => {
+    if (window.ghostFeatures) await window.ghostFeatures.onRoundEnd(yourScore);
+    recordScore(state.aiDifficulty, yourScore);
+  })();
 }
 
 document.getElementById("btn-rematch").onclick = () => {
@@ -1313,6 +1332,7 @@ document.getElementById("btn-rematch").onclick = () => {
 document.getElementById("btn-resetup").onclick = () => {
   stopAllSamplePlayers();
   ensureSamplePlayers();
+  if (window.ghostFeatures) window.ghostFeatures.clearChallenge();
   showScreen("screen-setup");
 };
 
@@ -1618,6 +1638,7 @@ async function renderLeaderboard() {
   const list = document.getElementById("lb-list");
   list.innerHTML = '<div class="hint">Loading...</div>';
   const key = state.lbDifficulty || "rookie";
+  if (window.ghostFeatures) window.ghostFeatures.renderGhostList(key);
   try {
     const res = await api(`/api/leaderboard?difficulty=${key}&limit=50`);
     const data = await res.json();
@@ -1653,5 +1674,6 @@ document.getElementById("btn-profile-back").onclick = () => showScreen("screen-s
 document.getElementById("btn-lb-refresh").onclick = () => renderLeaderboard();
 document.getElementById("btn-lb-back").onclick = () => showScreen("screen-setup");
 </script>
+<script src="/ghost-features.js"></script>
 </body>
 </html>
