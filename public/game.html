@@ -1,0 +1,1620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beat Arena — Solo Battle (prototype)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #0f0f23;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .app { width: 100%; max-width: 480px; }
+  .screen { display: none; }
+  .screen.active { display: block; animation: fadein .3s ease; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: translateY(0);} }
+
+  h1.logo { font-size: 26px; text-align: center; margin: 0 0 4px; letter-spacing: 1px; }
+  h1.logo span { color: #e94560; }
+  .tagline { text-align: center; color: #8888a0; font-size: 13px; margin-bottom: 20px; }
+
+  .diff-toggle { display: flex; justify-content: center; margin-bottom: 20px; border: 1px solid #2a2a3e; border-radius: 8px; overflow: hidden; width: fit-content; margin-left: auto; margin-right: auto; }
+  .diff-toggle div { padding: 6px 18px; font-size: 13px; cursor: pointer; color: #8888a0; }
+  .diff-toggle div.on { background: #e94560; color: #fff; }
+
+  .row { margin-bottom: 16px; }
+  .row-label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #aaa; margin-bottom: 8px; }
+  .row-label .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pill { font-size: 12px; padding: 8px 12px; border-radius: 20px; cursor: pointer; border: 1px solid #2a2a3e; background: #16213e; color: #ccc; transition: all .15s; }
+  .pill.sel { border-color: #e94560; background: rgba(233,69,96,0.15); color: #ff8a9e; }
+
+  .btn-primary { width: 100%; padding: 14px; margin-top: 8px; background: #e94560; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .btn-primary:active { transform: scale(.98); }
+  .btn-secondary { width: 100%; padding: 12px; margin-top: 10px; background: #16213e; color: #ccc; border: 1px solid #2a2a3e; border-radius: 8px; font-size: 14px; cursor: pointer; }
+
+  .timer-wrap { display: flex; justify-content: center; margin: 6px 0 16px; }
+  .timer-ring { position: relative; width: 84px; height: 84px; }
+  .timer-ring svg { transform: rotate(-90deg); }
+  .timer-ring circle { fill: none; stroke-width: 6; }
+  .timer-ring .bg { stroke: #1a1a2e; }
+  .timer-ring .fg { stroke: #e94560; stroke-linecap: round; transition: stroke-dashoffset .2s linear; }
+  .timer-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 600; font-family: monospace; }
+
+  .section-pills { display: flex; gap: 6px; margin-bottom: 14px; }
+  .section-pill { flex: 1; text-align: center; padding: 8px 4px; border-radius: 8px; background: #16213e; border: 1px solid #2a2a3e; }
+  .section-pill.active { border-color: #ffe66d; background: rgba(255,230,109,0.1); }
+  .section-pill .sname { font-size: 13px; font-weight: 600; }
+  .section-pill .srange { font-size: 10px; color: #7a7a92; }
+
+  .playhead { display: flex; gap: 2px; justify-content: center; margin-bottom: 16px; }
+  .playhead .step { width: 6px; height: 6px; border-radius: 50%; background: #2a2a3e; }
+  .playhead .step.cur { background: #ffe66d; transform: scale(1.4); }
+
+  .arr-grid { margin-bottom: 16px; }
+  .arr-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .arr-row .rlabel { width: 84px; font-size: 12px; color: #ccc; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .arr-row .rlabel .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .arr-cells { display: flex; gap: 6px; flex: 1; }
+  .arr-cell { flex: 1; height: 34px; border-radius: 6px; background: #16213e; border: 1px solid #2a2a3e; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .arr-cell.on { background: rgba(78,205,196,0.18); border-color: #4ecdc4; }
+  .arr-cell.on::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: #4ecdc4; }
+  .vu { width: 26px; height: 34px; border-radius: 4px; background: #0f0f23; border: 1px solid #2a2a3e; position: relative; overflow: hidden; flex-shrink: 0; }
+  .vu .fill { position: absolute; bottom: 0; left: 0; right: 0; height: 15%; background: #4ecdc4; transition: height .12s ease-out; }
+
+  .live-meter-wrap { margin: 14px 0 4px; }
+  .live-meter-label { font-size: 12px; color: #8888a0; margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .meter-track { background: #1a1a2e; border-radius: 20px; height: 16px; overflow: hidden; }
+  .meter-fill { height: 100%; width: 0%; border-radius: 20px; }
+  .meter-fill.live { background: linear-gradient(90deg,#1d9e75,#ffe66d); transition: width .25s ease-out; }
+  .meter-fill.you { background: linear-gradient(90deg,#1d9e75,#4ecdc4); transition: width 1.2s cubic-bezier(.2,.8,.2,1); }
+  .meter-fill.ai { background: linear-gradient(90deg,#d85a30,#f0997b); transition: width 1.2s cubic-bezier(.2,.8,.2,1); }
+
+  .vs-wrap { text-align: center; margin: 16px 0; }
+  .vs-label { font-size: 12px; color: #7a7a92; letter-spacing: 2px; margin-bottom: 6px; }
+  .status-line { text-align: center; font-size: 13px; color: #7a7a92; min-height: 18px; margin-bottom: 14px; }
+
+  .result-banner { text-align: center; padding: 24px; border-radius: 12px; margin-bottom: 20px; }
+  .result-banner.win { background: rgba(29,158,117,0.15); border: 1px solid #1d9e75; }
+  .result-banner.lose { background: rgba(216,90,48,0.15); border: 1px solid #d85a30; }
+  .result-banner h2 { margin: 0 0 4px; font-size: 22px; }
+  .score-row { display: flex; justify-content: space-around; margin-top: 12px; }
+  .score-row div { text-align: center; }
+  .score-row .num { font-size: 28px; font-weight: 700; }
+  .score-row .lbl { font-size: 12px; color: #8888a0; }
+  .hint { text-align: center; font-size: 12px; color: #6a6a82; margin-top: 10px; }
+
+  .adv-section { margin-bottom: 20px; }
+  .adv-title { font-size: 13px; color: #ccc; margin-bottom: 8px; }
+  .adv-title .adv-sub { display: block; font-size: 11px; color: #6a6a82; font-weight: 400; margin-top: 2px; }
+
+  .drum-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .drum-row .rlabel { width: 46px; font-size: 11px; color: #aaa; flex-shrink: 0; }
+  .drum-cells { display: flex; gap: 2px; flex: 1; }
+  .drum-cell { flex: 1; height: 26px; border-radius: 3px; background: #16213e; border: 1px solid #2a2a3e; cursor: pointer; }
+  .drum-cell.v1 { background: rgba(78,205,196,0.35); border-color: #4ecdc4; }
+  .drum-cell.v2 { background: #4ecdc4; border-color: #4ecdc4; }
+  .drum-cell.beat0 { border-left: 2px solid #444; }
+
+  .swing-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; color: #8888a0; }
+  .swing-row input[type=range] { flex: 1; }
+
+  .chord-slots { display: flex; gap: 6px; margin-bottom: 10px; }
+  .chord-slot { flex: 1; padding: 10px 4px; text-align: center; border-radius: 8px; background: #16213e; border: 1px solid #2a2a3e; cursor: pointer; font-size: 12px; color: #ccc; }
+  .chord-slot.sel { border-color: #ffe66d; background: rgba(255,230,109,0.1); }
+  .chord-palette { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chord-pad { flex: 1; min-width: 58px; padding: 8px 4px; text-align: center; border-radius: 8px; background: #16213e; border: 1px solid #2a2a3e; cursor: pointer; font-size: 11px; color: #ccc; }
+  .chord-pad.cur { border-color: #7f77dd; background: rgba(127,119,221,0.18); color: #cbc7f5; }
+
+  .roll-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+  .roll-row .rlabel { width: 28px; font-size: 10px; color: #7a7a92; flex-shrink: 0; text-align: right; }
+  .roll-cells { display: flex; gap: 1px; flex: 1; }
+  .roll-cell { flex: 1; height: 15px; border-radius: 2px; background: #16213e; border: 1px solid #1e1e30; cursor: pointer; }
+  .roll-cell.on { background: #f0997b; border-color: #f0997b; }
+  .roll-cell.beat0 { border-left: 2px solid #333; }
+
+  .fx-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 11px; color: #8888a0; }
+  .fx-row .flabel { width: 54px; flex-shrink: 0; color: #ccc; }
+  .fx-row .fslider { flex: 1; display: flex; align-items: center; gap: 4px; }
+  .fx-row input[type=range] { flex: 1; }
+
+  .header-row { display: flex; justify-content: center; gap: 8px; margin-bottom: 14px; }
+  .icon-btn { background: #16213e; border: 1px solid #2a2a3e; color: #ccc; border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; }
+  .storage-banner { text-align: center; font-size: 11px; color: #7a7a92; margin-bottom: 14px; padding: 6px; border-radius: 6px; background: #16213e; }
+  .avatar { width: 64px; height: 64px; border-radius: 50%; background: #16213e; border: 2px solid #2a2a3e; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #7a7a92; object-fit: cover; overflow: hidden; cursor: pointer; }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+  .profile-card { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+  .profile-addr { font-size: 12px; color: #7a7a92; font-family: monospace; }
+  .profile-name-input { background: #16213e; border: 1px solid #2a2a3e; color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 13px; width: 100%; margin-top: 4px; }
+  .score-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px; }
+  .score-cell { background: #16213e; border-radius: 8px; padding: 10px 4px; text-align: center; }
+  .score-cell .sc-label { font-size: 10px; color: #7a7a92; margin-bottom: 4px; }
+  .score-cell .sc-num { font-size: 18px; font-weight: 700; }
+  .lb-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: #16213e; margin-bottom: 6px; }
+  .lb-row.me { border: 1px solid #ffe66d; background: rgba(255,230,109,0.08); }
+  .lb-rank { width: 22px; font-size: 12px; color: #7a7a92; text-align: center; flex-shrink: 0; }
+  .lb-avatar { width: 32px; height: 32px; border-radius: 50%; background: #0f0f23; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #7a7a92; overflow: hidden; }
+  .lb-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .lb-name { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-score { font-size: 15px; font-weight: 700; flex-shrink: 0; }
+
+  .lib-item { display: flex; align-items: center; gap: 8px; background: #16213e; border: 1px solid #2a2a3e; border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
+  .lib-name { flex: 1; font-size: 12px; color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lib-controls { display: flex; gap: 4px; flex-shrink: 0; }
+  .lib-select { background: #0f0f23; color: #ccc; border: 1px solid #2a2a3e; border-radius: 6px; font-size: 11px; padding: 4px; }
+  .lib-btn { background: #0f0f23; color: #ccc; border: 1px solid #2a2a3e; border-radius: 6px; width: 28px; height: 28px; cursor: pointer; font-size: 12px; }
+  .lib-badge { background: rgba(240,153,123,0.12); border: 1px solid #f0997b; border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #f5c3ac; }
+  .clear-link { color: #ff8a9e; text-decoration: underline; cursor: pointer; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SCREEN 1: SETUP -->
+  <div class="screen active" id="screen-setup">
+    <h1 class="logo">BEAT <span>ARENA</span></h1>
+    <div class="tagline">Solo battle vs AI — build your beat, beat the crowd score</div>
+    <div class="header-row">
+      <button class="icon-btn" id="open-profile-btn">\u{1F464} Profile</button>
+      <button class="icon-btn" id="open-leaderboard-btn">\u{1F3C6} Leaderboard</button>
+    </div>
+
+    <div class="adv-section" id="library-section">
+      <div class="adv-title">Music library<span class="adv-sub">upload your own samples or tracks to use as material</span></div>
+      <input type="file" id="lib-file-input" accept="audio/*" multiple style="display:none">
+      <button class="btn-secondary" id="lib-upload-btn" style="margin-top:0">+ Upload audio</button>
+      <button class="btn-secondary" id="open-extract-btn">Extract stems from a track ↗</button>
+      <div id="lib-list" style="margin-top:10px"></div>
+    </div>
+
+    <div class="diff-toggle" id="mode-toggle"></div>
+
+    <div id="setup-rows"></div>
+    <div id="advanced-editor" style="display:none">
+      <div class="adv-section">
+        <div class="adv-title">Drums<span class="adv-sub">tap a cell to cycle: off → soft → hard</span></div>
+        <div id="drum-editor"></div>
+        <div class="swing-row"><span>Swing</span><input type="range" id="swing-slider" min="0" max="60" value="10"><span id="swing-val">10%</span></div>
+      </div>
+      <div class="adv-section">
+        <div class="adv-title">Chords<span class="adv-sub">scale-locked — pick a chord per slot</span></div>
+        <div id="chord-editor"></div>
+      </div>
+      <div class="adv-section">
+        <div class="adv-title">Bass<span class="adv-sub">tap a cell to place a note</span></div>
+        <div id="bass-roll"></div>
+      </div>
+      <div class="adv-section">
+        <div class="adv-title">Melody<span class="adv-sub">tap a cell to place a note</span></div>
+        <div id="melody-roll"></div>
+      </div>
+      <div class="adv-section">
+        <div class="adv-title">Track FX<span class="adv-sub">filter + reverb per layer</span></div>
+        <div id="fx-panel"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="row-label"><span class="dot" style="background:#ffe66d"></span>Choose your opponent</div>
+      <div class="pills" id="diff-pills"></div>
+      <div class="hint" id="diff-blurb" style="margin-top:8px"></div>
+    </div>
+
+    <button class="btn-primary" id="btn-start">Start battle (30s) ↗</button>
+  </div>
+
+  <!-- SCREEN 2: BUILD PHASE -->
+  <div class="screen" id="screen-build">
+    <h1 class="logo" style="font-size:18px">COOK YOUR BEAT</h1>
+    <div class="tagline">Tap cells to bring layers in and out per section</div>
+    <div class="timer-wrap">
+      <div class="timer-ring">
+        <svg width="84" height="84">
+          <circle class="bg" cx="42" cy="42" r="35"/>
+          <circle class="fg" id="timer-circle" cx="42" cy="42" r="35" stroke-dasharray="220" stroke-dashoffset="0"/>
+        </svg>
+        <div class="timer-num" id="timer-num">30</div>
+      </div>
+    </div>
+
+    <div class="section-pills" id="section-pills"></div>
+    <div class="playhead" id="playhead"></div>
+    <div class="arr-grid" id="arr-grid"></div>
+
+    <div class="live-meter-wrap">
+      <div class="live-meter-label"><span>Live hype</span><span id="live-hype-num">0</span></div>
+      <div class="meter-track"><div class="meter-fill live" id="meter-live"></div></div>
+    </div>
+    <div class="hint">Try: drums+bass only in Intro, add chords in Build, everything in Drop.</div>
+  </div>
+
+  <!-- SCREEN 3: REVEAL / VS -->
+  <div class="screen" id="screen-reveal">
+    <h1 class="logo" style="font-size:18px">CROWD SCORE BATTLE</h1>
+    <div class="status-line" id="reveal-status">Locking in your beat...</div>
+    <div class="vs-wrap">
+      <div class="vs-label">YOU</div>
+      <div class="meter-track"><div class="meter-fill you" id="meter-you"></div></div>
+    </div>
+    <div class="vs-wrap">
+      <div class="vs-label">AI OPPONENT</div>
+      <div class="meter-track"><div class="meter-fill ai" id="meter-ai"></div></div>
+    </div>
+  </div>
+
+  <!-- SCREEN 4: RESULT -->
+  <div class="screen" id="screen-result">
+    <div class="result-banner" id="result-banner">
+      <h2 id="result-title">You win!</h2>
+      <div class="score-row">
+        <div><div class="num" id="score-you">0</div><div class="lbl">You</div></div>
+        <div><div class="num" id="score-ai">0</div><div class="lbl">AI</div></div>
+      </div>
+    </div>
+    <button class="btn-primary" id="btn-rematch">Rematch ↗</button>
+    <button class="btn-secondary" id="btn-resetup">New setup</button>
+  </div>
+
+  <!-- SCREEN 5: EXTRACT STEMS -->
+  <div class="screen" id="screen-extract">
+    <h1 class="logo" style="font-size:18px">EXTRACT STEMS</h1>
+    <div class="tagline">Pick a track, preview each frequency band, assign what you want</div>
+
+    <div class="row">
+      <div class="row-label">Source track</div>
+      <select id="extract-source-select" class="lib-select" style="width:100%; height:36px; margin-bottom:8px"></select>
+      <button class="btn-secondary" id="extract-upload-btn" style="margin-top:0">+ Upload a new track</button>
+      <input type="file" id="extract-file-input" accept="audio/*" style="display:none">
+    </div>
+
+    <div id="extract-bands"></div>
+
+    <button class="btn-primary" id="btn-extract-done">Done — back to setup ↗</button>
+  </div>
+
+  <!-- SCREEN 6: PROFILE -->
+  <div class="screen" id="screen-profile">
+    <h1 class="logo" style="font-size:18px">PROFILE</h1>
+    <div class="storage-banner" id="storage-banner-profile"></div>
+    <div id="profile-body"></div>
+    <button class="btn-secondary" id="btn-profile-back">Back to setup</button>
+  </div>
+
+  <!-- SCREEN 7: LEADERBOARD -->
+  <div class="screen" id="screen-leaderboard">
+    <h1 class="logo" style="font-size:18px">LEADERBOARD</h1>
+    <div class="storage-banner" id="storage-banner-lb"></div>
+    <div class="pills" id="lb-diff-pills" style="margin-bottom:14px; justify-content:center"></div>
+    <div id="lb-list"></div>
+    <button class="btn-secondary" id="btn-lb-refresh">Refresh</button>
+    <button class="btn-secondary" id="btn-lb-back">Back to setup</button>
+  </div>
+
+</div>
+
+<script>
+/* ---------- musical data (all locked to A minor so nothing clashes) ---------- */
+
+const DRUM_PRESETS = {
+  "Punchy trap":   { kick:[0,3,6,10,12],      snare:[4,12],        hihat:[0,2,3,4,6,7,8,10,11,12,14,15] },
+  "Chill lo-fi":   { kick:[0,7,10],           snare:[4,12],        hihat:[2,6,10,14] },
+  "Four on floor": { kick:[0,4,8,12],         snare:[4,12],        hihat:[2,6,10,14] },
+  "Boom bap":      { kick:[0,10],             snare:[4,12],        hihat:[0,2,4,6,8,10,12,14] },
+};
+
+const CHORD_PRESETS = {
+  "Dreamy":     ["Am","F","C","G"],
+  "Dark":       ["Am","Dm","Em","Am"],
+  "Uplifting":  ["C","G","Am","F"],
+  "Moody":      ["Am","G","F","Em"],
+};
+const CHORD_NOTES = {
+  Am:["A3","C4","E4"], F:["F3","A3","C4"], C:["C3","E3","G3"], G:["G3","B3","D4"],
+  Dm:["D3","F3","A3"], Em:["E3","G3","B3"], Bdim:["B3","D4","F4"],
+};
+const CHORD_ROOT = { Am:"A2", F:"F2", C:"C2", G:"G2", Dm:"D2", Em:"E2", Bdim:"B2" };
+const DIATONIC_CHORDS = [
+  { name:"Am", roman:"i" }, { name:"Bdim", roman:"ii°" }, { name:"C", roman:"III" },
+  { name:"Dm", roman:"iv" }, { name:"Em", roman:"v" }, { name:"F", roman:"VI" }, { name:"G", roman:"VII" },
+];
+
+const BASS_STYLES = ["Deep sub","Groovy pluck","Growly wobble","Warm round"];
+
+const MELODY_PRESETS = {
+  "Sparkly lead": ["E4",null,"C4",null,"D4",null,"E4","G4",null,"E4",null,"C4","D4",null,null,"A4"],
+  "Simple hook":  ["A4",null,null,null,"C4",null,null,null,"E4",null,null,null,"D4",null,null,null],
+  "Airy pad":     ["A4",null,null,null,null,null,null,null,"E4",null,null,null,null,null,null,null],
+  "Plucky arp":   ["A3","C4","E4","A4","E4","C4","A3","C4","E4","A4","E4","C4","A3","C4","E4","A4"],
+};
+
+const BASS_SCALE_DISPLAY = ["A3","G3","F3","E3","D3","C3","B2","A2"];
+const MELODY_SCALE_DISPLAY = ["A4","G4","F4","E4","D4","C4","B3","A3"];
+
+const ROWS = [
+  { key:"drums",  label:"Drums",  icon:"#e94560", options:Object.keys(DRUM_PRESETS) },
+  { key:"chords", label:"Chords", icon:"#7f77dd", options:Object.keys(CHORD_PRESETS) },
+  { key:"bass",   label:"Bass",   icon:"#1d9e75", options:BASS_STYLES },
+  { key:"melody", label:"Melody", icon:"#f0997b", options:Object.keys(MELODY_PRESETS) },
+];
+
+const SECTIONS = [
+  { name:"Intro", range:"0-10s" },
+  { name:"Build", range:"10-20s" },
+  { name:"Drop",  range:"20-30s" },
+];
+
+// crude frequency-band "stems" — NOT real source separation, just EQ slicing
+const BAND_DEFS = {
+  bass:    { label:"Bass band (low)",                     type:"lowpass",  freq:150,  suggested:"bass" },
+  lowmid:  { label:"Chords band (low-mid)",                type:"bandpass", freq:400,  Q:0.8, suggested:"chords" },
+  highmid: { label:"Melody band (high-mid)",               type:"bandpass", freq:2000, Q:0.8, suggested:"melody" },
+  high:    { label:"Drums band (high — mostly hats/cymbals)", type:"highpass", freq:4000, suggested:"drums" },
+};
+
+function genId() { return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ("id" + Date.now() + Math.random()); }
+
+const DIFFICULTIES = [
+  { key:"newbie", label:"Newbie", blurb:"Sloppy — plays a few drum hits then just gives up.",
+    template:{ drums:[true,false,false], chords:[false,false,false], bass:[false,false,false], melody:[false,false,false] } },
+  { key:"rookie", label:"Rookie", blurb:"Decent — has a beat going, but never brings the melody in.",
+    template:{ drums:[true,true,true], chords:[false,false,true], bass:[false,true,true], melody:[false,false,false] } },
+  { key:"pro", label:"Pro", blurb:"Tight — a real intro-build-drop arc with every layer in play.",
+    template:{ drums:[true,true,true], chords:[false,true,true], bass:[true,true,true], melody:[false,false,true] } },
+  { key:"legend", label:"Legend", blurb:"Note-perfect — dense, layered, barely a weak moment.",
+    template:{ drums:[true,true,true], chords:[true,true,true], bass:[true,true,true], melody:[false,true,true] } },
+];
+
+/* ---------- state ---------- */
+
+const state = {
+  mode: "beginner",
+  picks: { drums:"Punchy trap", chords:"Dreamy", bass:"Deep sub", melody:"Sparkly lead" },
+  arrangement: {
+    drums:  [true, true, true],
+    chords: [false, true, true],
+    bass:   [true, true, true],
+    melody: [false, false, true],
+  },
+  advanced: {
+    drums: {
+      kick:  [1,0,0,0.6, 0,0,0.8,0, 0,0,1,0, 0.6,0,0,0],
+      snare: [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
+      hihat: [0.4,0,0.4,0.4, 0.4,0,0.4,0.4, 0.4,0,0.4,0.4, 0.4,0,0.4,0.4],
+      swing: 10,
+    },
+    chordSlots: ["Am","F","C","G"],
+    selectedChordSlot: 0,
+    bass:   ["A2",null,null,null, null,null,null,null, "C2",null,null,null, null,null,null,null],
+    melody: ["E4",null,"C4",null, "D4",null,"E4","G4", null,"E4",null,"C4", "D4",null,null,"A4"],
+    fx: {
+      drums:{filter:100, reverb:0}, chords:{filter:100, reverb:20},
+      bass:{filter:100, reverb:0}, melody:{filter:100, reverb:15},
+    },
+  },
+  library: [],                                             // { id, name, objectUrl }
+  sampleAssign: { drums:null, chords:null, bass:null, melody:null }, // layer -> library item id
+  bpm: 92,
+  timeLeft: 30,
+  currentSection: 0,
+  timerHandle: null,
+  aiDifficulty: "rookie",
+};
+
+/* ---------- audio engine ---------- */
+
+let synths = null;
+let buses = null;
+let samplePlayers = { drums:null, chords:null, bass:null, melody:null };
+
+function freqFromPct(pct) { return Math.round(200 * Math.pow(50, pct / 100)); }
+
+function createBus() {
+  const filter = new Tone.Filter(8000, "lowpass");
+  const reverb = new Tone.Freeverb({ roomSize:0.7, wet:0 });
+  filter.connect(reverb);
+  reverb.toDestination();
+  return { filter, reverb };
+}
+
+function setFX(track, filterPct, reverbPct) {
+  if (!buses || !buses[track]) return;
+  buses[track].filter.frequency.value = freqFromPct(filterPct);
+  buses[track].reverb.wet.value = reverbPct / 100;
+}
+
+function applyDefaultFX() { ["drums","chords","bass","melody"].forEach(t => setFX(t, 100, t === "melody" ? 8 : 0)); }
+function applyAdvancedFX() { Object.keys(state.advanced.fx).forEach(t => setFX(t, state.advanced.fx[t].filter, state.advanced.fx[t].reverb)); }
+
+function initAudio() {
+  if (synths) return;
+  synths = {
+    kick:  new Tone.MembraneSynth({ pitchDecay:0.05, octaves:5, envelope:{attack:0.001,decay:0.4,sustain:0} }),
+    snare: new Tone.NoiseSynth({ noise:{type:"white"}, envelope:{attack:0.001,decay:0.2,sustain:0} }),
+    hihat: new Tone.MetalSynth({ frequency:200, envelope:{attack:0.001,decay:0.08,sustain:0}, harmonicity:5.1, modulationIndex:32, resonance:4000 }),
+    chord: new Tone.PolySynth(Tone.Synth, { oscillator:{type:"sine"}, envelope:{attack:0.05,decay:0.3,sustain:0.4,release:0.6} }),
+    bass:  new Tone.Synth({ oscillator:{type:"triangle"}, envelope:{attack:0.01,decay:0.3,sustain:0.4,release:0.3} }),
+    melody:new Tone.Synth({ oscillator:{type:"square"}, envelope:{attack:0.005,decay:0.2,sustain:0.1,release:0.2} }),
+  };
+  synths.chord.volume.value = -10;
+  synths.melody.volume.value = -6;
+  synths.hihat.volume.value = -8;
+
+  buses = { drums:createBus(), chords:createBus(), bass:createBus(), melody:createBus() };
+  synths.kick.connect(buses.drums.filter);
+  synths.snare.connect(buses.drums.filter);
+  synths.hihat.connect(buses.drums.filter);
+  synths.chord.connect(buses.chords.filter);
+  synths.bass.connect(buses.bass.filter);
+  synths.melody.connect(buses.melody.filter);
+
+  Tone.Transport.swingSubdivision = "16n";
+  applyDefaultFX();
+}
+
+/* ---------- uploaded sample players ---------- */
+
+function disposePlayer(p) {
+  if (!p) return;
+  try { p.stop(); } catch (e) {}
+  if (p._bandFilter) p._bandFilter.dispose();
+  p.dispose();
+}
+
+// Creates a playable Tone node for a library item regardless of which engine it needed.
+// "buffer" items decode cleanly via Web Audio and use Tone.Player (precise, preferred).
+// "media" items failed that decode (format Web Audio's decodeAudioData rejected) and
+// fall back to a native <audio> element piped in via createMediaElementSource — browsers'
+// media pipeline accepts a broader range of containers/codecs than decodeAudioData does.
+function makePlayerNode(item, opts) {
+  opts = opts || {};
+  if (item.engine === "media") {
+    const audioEl = new Audio(item.objectUrl);
+    audioEl.loop = !!opts.loop;
+    audioEl.crossOrigin = "anonymous";
+    const srcNode = Tone.context.createMediaElementSource(audioEl);
+    const vol = new Tone.Volume(0);
+    Tone.connect(srcNode, vol);
+    if (opts.autostart) audioEl.play().catch(() => {});
+    const origDispose = vol.dispose.bind(vol);
+    vol.stop = () => { try { audioEl.pause(); } catch (e) {} };
+    vol.dispose = () => { try { audioEl.pause(); audioEl.src = ""; } catch (e) {} origDispose(); };
+    vol._audioEl = audioEl;
+    return vol;
+  }
+  return new Tone.Player({ url:item.objectUrl, loop:!!opts.loop, autostart:!!opts.autostart });
+}
+
+// Tries to decode a freshly-uploaded file via Web Audio; if that fails, checks whether
+// a native <audio> element can at least read its metadata, and tags the item accordingly
+// so playback code knows which engine to use. Runs once per uploaded source file.
+function probeFormat(item, onDone) {
+  item.status = "checking";
+  fetch(item.objectUrl)
+    .then(res => res.arrayBuffer())
+    .then(arrayBuf => Tone.context.decodeAudioData(arrayBuf))
+    .then(() => { item.engine = "buffer"; item.status = "ready"; onDone && onDone(item); })
+    .catch(() => {
+      const audioEl = new Audio();
+      audioEl.addEventListener("loadedmetadata", () => { item.engine = "media"; item.status = "ready"; onDone && onDone(item); }, { once:true });
+      audioEl.addEventListener("error", () => { item.engine = null; item.status = "error"; onDone && onDone(item); }, { once:true });
+      audioEl.src = item.objectUrl;
+    });
+}
+
+function ensureSamplePlayers() {
+  ["drums","chords","bass","melody"].forEach(layer => {
+    const itemId = state.sampleAssign[layer];
+    const existing = samplePlayers[layer];
+    if (!itemId) {
+      if (existing) { disposePlayer(existing); samplePlayers[layer] = null; }
+      return;
+    }
+    if (existing && existing._itemId === itemId) return;
+    if (existing) disposePlayer(existing);
+    const item = state.library.find(i => i.id === itemId);
+    if (!item || !buses || item.status !== "ready") return;
+    const p = makePlayerNode(item, { loop:true, autostart:true });
+    p._itemId = itemId;
+    if (item.band) {
+      const bd = BAND_DEFS[item.band];
+      const bandFilter = new Tone.Filter(bd.freq, bd.type);
+      if (bd.Q) bandFilter.Q.value = bd.Q;
+      p.connect(bandFilter);
+      bandFilter.connect(buses[layer].filter);
+      p._bandFilter = bandFilter;
+    } else {
+      p.connect(buses[layer].filter);
+    }
+    p.volume.value = -Infinity;
+    samplePlayers[layer] = p;
+  });
+}
+
+function setSampleVolumesForSection(active) {
+  Object.keys(samplePlayers).forEach(layer => {
+    const p = samplePlayers[layer];
+    if (p) p.volume.value = active[layer] ? 0 : -Infinity;
+  });
+}
+function muteAllSamples() { Object.values(samplePlayers).forEach(p => { if (p) p.volume.value = -Infinity; }); }
+function stopAllSamplePlayers() {
+  Object.keys(samplePlayers).forEach(layer => {
+    disposePlayer(samplePlayers[layer]);
+    samplePlayers[layer] = null;
+  });
+}
+
+async function previewSample(item) {
+  if (item.status !== "ready") return;
+  await Tone.start();
+  const p = makePlayerNode(item, { loop:false, autostart:true });
+  p.toDestination();
+  setTimeout(() => { try { disposePlayer(p); } catch (e) {} }, 4000);
+}
+
+// plays one frequency band of a source track in isolation — direct to destination,
+// no dependency on buses/battle state, so it works from the setup screen at any time
+async function previewBand(sourceItem, bandKey) {
+  if (sourceItem.status !== "ready") return;
+  await Tone.start();
+  const bd = BAND_DEFS[bandKey];
+  const filter = new Tone.Filter(bd.freq, bd.type);
+  if (bd.Q) filter.Q.value = bd.Q;
+  filter.toDestination();
+  const p = makePlayerNode(sourceItem, { loop:false, autostart:true });
+  p.connect(filter);
+  setTimeout(() => { try { disposePlayer(p); filter.dispose(); } catch (e) {} }, 5000);
+}
+
+/* ---------- pattern building ---------- */
+
+function buildPattern(picks) {
+  const drum = DRUM_PRESETS[picks.drums];
+  const chordSeq = CHORD_PRESETS[picks.chords];
+  const bassStyle = picks.bass;
+  const melody = MELODY_PRESETS[picks.melody];
+
+  const pattern = [];
+  for (let step = 0; step < 16; step++) {
+    const seg = Math.floor(step / 4);
+    const segPos = step % 4;
+    const chordName = chordSeq[seg];
+    const entry = {
+      kick: drum.kick.includes(step) ? 1 : 0,
+      snare: drum.snare.includes(step) ? 1 : 0,
+      hihat: drum.hihat.includes(step) ? 1 : 0,
+      chordNotes: segPos === 0 ? CHORD_NOTES[chordName] : null,
+      bassNote: null,
+      melodyNote: melody[step],
+    };
+    const root = CHORD_ROOT[chordName];
+    if (bassStyle === "Deep sub" && segPos === 0) entry.bassNote = { note:root, dur:"2n" };
+    if (bassStyle === "Groovy pluck" && (segPos === 0 || segPos === 2)) entry.bassNote = { note:root, dur:"8n" };
+    if (bassStyle === "Growly wobble" && segPos === 0) entry.bassNote = { note:root, dur:"2n" };
+    if (bassStyle === "Warm round" && (segPos === 0 || segPos === 2)) entry.bassNote = { note:root, dur:"4n" };
+    pattern.push(entry);
+  }
+  return pattern;
+}
+
+function buildAdvancedPattern(adv) {
+  const pattern = [];
+  for (let step = 0; step < 16; step++) {
+    const seg = Math.floor(step / 4);
+    const segPos = step % 4;
+    const chordName = adv.chordSlots[seg];
+    pattern.push({
+      kick: adv.drums.kick[step] || 0,
+      snare: adv.drums.snare[step] || 0,
+      hihat: adv.drums.hihat[step] || 0,
+      chordNotes: segPos === 0 ? CHORD_NOTES[chordName] : null,
+      bassNote: adv.bass[step] ? { note:adv.bass[step], dur:"8n" } : null,
+      melodyNote: adv.melody[step],
+    });
+  }
+  return pattern;
+}
+
+function layerHitsAt(pattern, step, layer) {
+  if (state.sampleAssign[layer]) return step % 4 === 0; // approximate beat pulse for sample layers
+  const e = pattern[step];
+  if (layer === "drums") return !!(e.kick || e.snare || e.hihat);
+  if (layer === "chords") return !!e.chordNotes;
+  if (layer === "bass") return !!e.bassNote;
+  if (layer === "melody") return !!e.melodyNote;
+  return false;
+}
+
+function triggerStep(pattern, step, active, time, sampleAssign) {
+  sampleAssign = sampleAssign || {};
+  const e = pattern[step];
+  if (e.kick && active.drums && !sampleAssign.drums) synths.kick.triggerAttackRelease("C1","8n",time, e.kick);
+  if (e.snare && active.drums && !sampleAssign.drums) synths.snare.triggerAttackRelease("8n",time, e.snare);
+  if (e.hihat && active.drums && !sampleAssign.drums) synths.hihat.triggerAttackRelease("8n",time, e.hihat * 0.6);
+  if (e.chordNotes && active.chords && !sampleAssign.chords) synths.chord.triggerAttackRelease(e.chordNotes,"2n",time);
+  if (e.bassNote && active.bass && !sampleAssign.bass) synths.bass.triggerAttackRelease(e.bassNote.note, e.bassNote.dur, time);
+  if (e.melodyNote && active.melody && !sampleAssign.melody) synths.melody.triggerAttackRelease(e.melodyNote,"8n",time);
+}
+
+let seq = null;
+function stopSequence() {
+  if (seq) { seq.dispose(); seq = null; }
+  Tone.Transport.stop();
+  Tone.Transport.position = 0;
+}
+
+function startLiveBuildLoop(pattern, onStep) {
+  stopSequence();
+  Tone.Transport.bpm.value = state.bpm;
+  seq = new Tone.Sequence((time, s) => {
+    const sec = state.currentSection;
+    const active = {
+      drums: state.arrangement.drums[sec], chords: state.arrangement.chords[sec],
+      bass: state.arrangement.bass[sec], melody: state.arrangement.melody[sec],
+    };
+    triggerStep(pattern, s, active, time, state.sampleAssign);
+    Tone.Draw.schedule(() => onStep && onStep(s, active), time);
+  }, [...Array(16).keys()], "16n").start(0);
+  Tone.Transport.start();
+}
+
+function playOnceWithMask(pattern, active, onStep, onEnd, sampleAssign) {
+  stopSequence();
+  Tone.Transport.bpm.value = state.bpm;
+  seq = new Tone.Sequence((time, s) => {
+    triggerStep(pattern, s, active, time, sampleAssign);
+    Tone.Draw.schedule(() => onStep && onStep(s), time);
+    if (s === 15) {
+      Tone.Draw.schedule(() => { stopSequence(); onEnd && onEnd(); }, time + Tone.Time("16n").toSeconds());
+    }
+  }, [...Array(16).keys()], "16n").start(0);
+  Tone.Transport.start();
+}
+
+function playSectionsForSide(pattern, arrangement, onSectionLabel, onAllDone, sampleAssign) {
+  let sec = 0;
+  function next() {
+    if (sec >= 3) { onAllDone(); return; }
+    const active = { drums:arrangement.drums[sec], chords:arrangement.chords[sec], bass:arrangement.bass[sec], melody:arrangement.melody[sec] };
+    onSectionLabel(SECTIONS[sec].name, sec, active);
+    playOnceWithMask(pattern, active, null, () => { sec += 1; next(); }, sampleAssign);
+  }
+  next();
+}
+
+/* ---------- scoring ---------- */
+
+function scoreSection(pattern, active, sampleAssign) {
+  sampleAssign = sampleAssign || {};
+  let score = 45;
+  const activeExtras = ["chords","bass","melody"].filter(k => active[k]).length;
+  score += activeExtras * 10;
+  if (active.drums && (pattern[0].kick || sampleAssign.drums)) score += 10;
+
+  let totalNotes = 0;
+  pattern.forEach(e => {
+    if (e.kick && active.drums) totalNotes++;
+    if (e.snare && active.drums) totalNotes++;
+    if (e.hihat && active.drums) totalNotes++;
+    if (e.chordNotes && active.chords) totalNotes++;
+    if (e.bassNote && active.bass) totalNotes++;
+    if (e.melodyNote && active.melody) totalNotes++;
+  });
+  ["drums","chords","bass","melody"].forEach(l => { if (sampleAssign[l] && active[l]) totalNotes += 6; });
+  score += (totalNotes >= 14 && totalNotes <= 34) ? 15 : 5;
+  return score;
+}
+
+function scoreArrangement(pattern, arrangement, sampleAssign) {
+  const sectionScores = [0,1,2].map(sec => scoreSection(pattern, {
+    drums: arrangement.drums[sec], chords: arrangement.chords[sec],
+    bass: arrangement.bass[sec], melody: arrangement.melody[sec],
+  }, sampleAssign));
+  const avg = sectionScores.reduce((a,b) => a+b, 0) / 3;
+  const activeCounts = [0,1,2].map(sec => ["drums","chords","bass","melody"].filter(k => arrangement[k][sec]).length);
+  const varies = new Set(activeCounts).size > 1;
+  const arcBonus = varies ? 10 : 0;
+  return Math.max(5, Math.min(100, Math.round(avg + arcBonus)));
+}
+
+/* ---------- UI: music library ---------- */
+
+function renderLibrary() {
+  const wrap = document.getElementById("lib-list");
+  wrap.innerHTML = "";
+  if (state.library.length === 0) {
+    wrap.innerHTML = '<div class="hint">No uploads yet — add a drum loop, bassline, or full track to use as material.</div>';
+    return;
+  }
+  const sources = state.library.filter(i => !i.isStem);
+  sources.forEach(item => {
+    wrap.appendChild(renderLibRow(item));
+    const stems = state.library.filter(i => i.sourceId === item.id);
+    stems.forEach(stem => wrap.appendChild(renderLibRow(stem)));
+    if (item.status === "ready") {
+      const extractBtn = document.createElement("button");
+      extractBtn.className = "btn-secondary";
+      extractBtn.style.marginTop = "0";
+      extractBtn.style.marginBottom = "10px";
+      extractBtn.textContent = stems.length === 0 ? "Extract stems from this →" : "Edit stems →";
+      extractBtn.onclick = () => openExtractScreenFor(item);
+      wrap.appendChild(extractBtn);
+    }
+  });
+}
+
+function renderLibRow(item) {
+  const row = document.createElement("div");
+  row.className = "lib-item";
+  if (item.isStem) row.style.marginLeft = "18px";
+  const assignedLayer = Object.keys(state.sampleAssign).find(l => state.sampleAssign[l] === item.id) || "";
+  const displayName = item.isStem ? ("\u21B3 " + BAND_DEFS[item.band].label) : ("\u{1F3B5} " + item.name);
+
+  if (item.status === "checking") {
+    row.innerHTML = `<div class="lib-name">${displayName}</div><div class="lib-controls"><span class="hint" style="margin:0">checking format...</span></div>`;
+    return row;
+  }
+  if (item.status === "error") {
+    row.innerHTML = `<div class="lib-name">${displayName}</div><div class="lib-controls"><span class="hint" style="margin:0;color:#f0997b">couldn't read this file — try mp3 or wav</span></div>`;
+    return row;
+  }
+
+  row.innerHTML = `
+    <div class="lib-name">${displayName}${item.engine === "media" ? " \u{1F50A}" : ""}</div>
+    <div class="lib-controls">
+      <select class="lib-select"></select>
+      <button class="lib-btn lib-preview" title="Preview">\u25B6</button>
+      <button class="lib-btn lib-remove" title="Remove">\u2715</button>
+    </div>`;
+  const select = row.querySelector(".lib-select");
+  [["","Assign to..."],["drums","Drums"],["chords","Chords"],["bass","Bass"],["melody","Melody"]].forEach(([val,label]) => {
+    const opt = document.createElement("option");
+    opt.value = val; opt.textContent = label;
+    if (val === assignedLayer) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.onchange = () => assignSample(item.id, select.value || null);
+  row.querySelector(".lib-preview").onclick = () => previewSample(item);
+  row.querySelector(".lib-remove").onclick = () => removeLibraryItem(item.id);
+  return row;
+}
+
+function assignSample(itemId, layer) {
+  Object.keys(state.sampleAssign).forEach(l => { if (state.sampleAssign[l] === itemId) state.sampleAssign[l] = null; });
+  if (layer) state.sampleAssign[layer] = itemId;
+  renderLibrary();
+  renderSetupRows();
+  if (state.mode === "advanced") renderAdvancedEditor();
+}
+
+function splitIntoStems(sourceItem) {
+  if (state.library.some(i => i.sourceId === sourceItem.id)) return; // already split
+  Object.keys(BAND_DEFS).forEach(bandKey => {
+    state.library.push({ id: genId(), name: sourceItem.name, objectUrl: sourceItem.objectUrl, isStem:true, sourceId: sourceItem.id, band: bandKey });
+  });
+  renderLibrary();
+}
+
+function removeLibraryItem(id) {
+  const idx = state.library.findIndex(i => i.id === id);
+  if (idx === -1) return;
+  const item = state.library[idx];
+  const derivedIds = state.library.filter(i => i.sourceId === id).map(i => i.id);
+  const allIds = [id, ...derivedIds];
+  allIds.forEach(rid => {
+    Object.keys(state.sampleAssign).forEach(l => {
+      if (state.sampleAssign[l] === rid) {
+        state.sampleAssign[l] = null;
+        disposePlayer(samplePlayers[l]);
+        samplePlayers[l] = null;
+      }
+    });
+  });
+  if (!item.isStem) URL.revokeObjectURL(item.objectUrl); // only revoke once per source
+  state.library = state.library.filter(i => !allIds.includes(i.id));
+  renderLibrary();
+  renderSetupRows();
+  if (state.mode === "advanced") renderAdvancedEditor();
+}
+
+document.getElementById("lib-upload-btn").onclick = () => document.getElementById("lib-file-input").click();
+document.getElementById("lib-file-input").onchange = (e) => {
+  Array.from(e.target.files).forEach(file => {
+    const item = { id: genId(), name: file.name, objectUrl: URL.createObjectURL(file), isStem:false, sourceId:null, band:null, engine:null, status:"checking" };
+    state.library.push(item);
+    probeFormat(item, () => renderLibrary());
+  });
+  e.target.value = "";
+  renderLibrary();
+};
+
+function libBadgeHtml(layer) {
+  const item = state.library.find(i => i.id === state.sampleAssign[layer]);
+  const name = item ? (item.isStem ? BAND_DEFS[item.band].label + " — from " + item.name : item.name) : "sample";
+  return `<div class="lib-badge">\u{1F3B5} Using "${name}"<span class="clear-link">Clear</span></div>`;
+}
+function wireClear(container, layer) {
+  const link = container.querySelector(".clear-link");
+  if (link) link.onclick = () => assignSample(state.sampleAssign[layer], null);
+}
+
+/* ---------- UI: mode toggle ---------- */
+
+function renderModeToggle() {
+  const wrap = document.getElementById("mode-toggle");
+  wrap.innerHTML = "";
+  ["beginner","advanced"].forEach(m => {
+    const d = document.createElement("div");
+    d.className = m === state.mode ? "on" : "";
+    d.textContent = m === "beginner" ? "Beginner" : "Advanced";
+    d.onclick = () => setMode(m);
+    wrap.appendChild(d);
+  });
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  renderModeToggle();
+  document.getElementById("setup-rows").style.display = mode === "beginner" ? "block" : "none";
+  document.getElementById("advanced-editor").style.display = mode === "advanced" ? "block" : "none";
+  if (mode === "advanced") renderAdvancedEditor();
+}
+
+/* ---------- UI: setup screen (beginner) ---------- */
+
+function renderSetupRows() {
+  const container = document.getElementById("setup-rows");
+  container.innerHTML = "";
+  ROWS.forEach(row => {
+    const div = document.createElement("div");
+    div.className = "row";
+    const label = document.createElement("div");
+    label.className = "row-label";
+    label.innerHTML = `<span class="dot" style="background:${row.icon}"></span>${row.label}`;
+    div.appendChild(label);
+
+    if (state.sampleAssign[row.key]) {
+      const badge = document.createElement("div");
+      badge.innerHTML = libBadgeHtml(row.key);
+      div.appendChild(badge.firstChild);
+      wireClear(div, row.key);
+    } else {
+      const pills = document.createElement("div");
+      pills.className = "pills";
+      row.options.forEach(opt => {
+        const pill = document.createElement("div");
+        pill.className = "pill" + (state.picks[row.key] === opt ? " sel" : "");
+        pill.textContent = opt;
+        pill.onclick = () => { state.picks[row.key] = opt; renderSetupRows(); };
+        pills.appendChild(pill);
+      });
+      div.appendChild(pills);
+    }
+    container.appendChild(div);
+  });
+}
+
+/* ---------- UI: advanced editor ---------- */
+
+function renderAdvancedEditor() {
+  renderDrumEditor();
+  renderChordEditor();
+  renderPianoRoll("bass", "bass-roll", BASS_SCALE_DISPLAY);
+  renderPianoRoll("melody", "melody-roll", MELODY_SCALE_DISPLAY);
+  renderFxPanel();
+  document.getElementById("swing-slider").value = state.advanced.drums.swing;
+  document.getElementById("swing-val").textContent = state.advanced.drums.swing + "%";
+}
+
+function renderDrumEditor() {
+  const container = document.getElementById("drum-editor");
+  container.innerHTML = "";
+  if (state.sampleAssign.drums) {
+    container.innerHTML = libBadgeHtml("drums");
+    wireClear(container, "drums");
+    return;
+  }
+  ["kick","snare","hihat"].forEach(layer => {
+    const row = document.createElement("div");
+    row.className = "drum-row";
+    const label = document.createElement("div");
+    label.className = "rlabel";
+    label.textContent = layer === "kick" ? "Kick" : layer === "snare" ? "Snare" : "Hi-hat";
+    row.appendChild(label);
+    const cells = document.createElement("div");
+    cells.className = "drum-cells";
+    for (let i = 0; i < 16; i++) {
+      const cell = document.createElement("div");
+      const v = state.advanced.drums[layer][i];
+      cell.className = "drum-cell" + (i % 4 === 0 ? " beat0" : "") + (v >= 1 ? " v2" : v > 0 ? " v1" : "");
+      cell.onclick = () => {
+        const cur = state.advanced.drums[layer][i];
+        state.advanced.drums[layer][i] = cur === 0 ? 0.6 : cur < 1 ? 1 : 0;
+        renderDrumEditor();
+      };
+      cells.appendChild(cell);
+    }
+    row.appendChild(cells);
+    container.appendChild(row);
+  });
+}
+
+function renderChordEditor() {
+  const container = document.getElementById("chord-editor");
+  container.innerHTML = "";
+  if (state.sampleAssign.chords) {
+    container.innerHTML = libBadgeHtml("chords");
+    wireClear(container, "chords");
+    return;
+  }
+  const slotsWrap = document.createElement("div");
+  slotsWrap.className = "chord-slots";
+  state.advanced.chordSlots.forEach((chordName, i) => {
+    const slot = document.createElement("div");
+    slot.className = "chord-slot" + (i === state.advanced.selectedChordSlot ? " sel" : "");
+    slot.innerHTML = `Bar ${i+1}<br>${chordName}`;
+    slot.onclick = () => { state.advanced.selectedChordSlot = i; renderChordEditor(); };
+    slotsWrap.appendChild(slot);
+  });
+  container.appendChild(slotsWrap);
+
+  const palette = document.createElement("div");
+  palette.className = "chord-palette";
+  const selected = state.advanced.chordSlots[state.advanced.selectedChordSlot];
+  DIATONIC_CHORDS.forEach(c => {
+    const pad = document.createElement("div");
+    pad.className = "chord-pad" + (c.name === selected ? " cur" : "");
+    pad.innerHTML = `${c.roman}<br>${c.name}`;
+    pad.onclick = () => {
+      state.advanced.chordSlots[state.advanced.selectedChordSlot] = c.name;
+      state.advanced.selectedChordSlot = (state.advanced.selectedChordSlot + 1) % 4;
+      renderChordEditor();
+    };
+    palette.appendChild(pad);
+  });
+  container.appendChild(palette);
+}
+
+function renderPianoRoll(trackKey, containerId, noteRows) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = "";
+  if (state.sampleAssign[trackKey]) {
+    container.innerHTML = libBadgeHtml(trackKey);
+    wireClear(container, trackKey);
+    return;
+  }
+  noteRows.forEach(note => {
+    const row = document.createElement("div");
+    row.className = "roll-row";
+    const label = document.createElement("div");
+    label.className = "rlabel";
+    label.textContent = note;
+    row.appendChild(label);
+    const cells = document.createElement("div");
+    cells.className = "roll-cells";
+    for (let i = 0; i < 16; i++) {
+      const cell = document.createElement("div");
+      const active = state.advanced[trackKey][i] === note;
+      cell.className = "roll-cell" + (i % 4 === 0 ? " beat0" : "") + (active ? " on" : "");
+      cell.onclick = () => {
+        state.advanced[trackKey][i] = active ? null : note;
+        renderPianoRoll(trackKey, containerId, noteRows);
+        if (synths) {
+          const s = trackKey === "bass" ? synths.bass : synths.melody;
+          if (!active) s.triggerAttackRelease(note, "8n");
+        }
+      };
+      cells.appendChild(cell);
+    }
+    row.appendChild(cells);
+    container.appendChild(row);
+  });
+}
+
+function renderFxPanel() {
+  const container = document.getElementById("fx-panel");
+  container.innerHTML = "";
+  [["drums","Drums"],["chords","Chords"],["bass","Bass"],["melody","Melody"]].forEach(([key,label]) => {
+    const row = document.createElement("div");
+    row.className = "fx-row";
+    row.innerHTML = `
+      <div class="flabel">${label}</div>
+      <div class="fslider">Filter <input type="range" min="0" max="100" value="${state.advanced.fx[key].filter}" id="fx-${key}-filter"></div>
+      <div class="fslider">Verb <input type="range" min="0" max="100" value="${state.advanced.fx[key].reverb}" id="fx-${key}-reverb"></div>
+    `;
+    container.appendChild(row);
+    row.querySelector(`#fx-${key}-filter`).oninput = (e) => {
+      state.advanced.fx[key].filter = Number(e.target.value);
+      setFX(key, state.advanced.fx[key].filter, state.advanced.fx[key].reverb);
+    };
+    row.querySelector(`#fx-${key}-reverb`).oninput = (e) => {
+      state.advanced.fx[key].reverb = Number(e.target.value);
+      setFX(key, state.advanced.fx[key].filter, state.advanced.fx[key].reverb);
+    };
+  });
+}
+
+document.getElementById("swing-slider").oninput = (e) => {
+  state.advanced.drums.swing = Number(e.target.value);
+  document.getElementById("swing-val").textContent = e.target.value + "%";
+  Tone.Transport.swing = Number(e.target.value) / 100;
+};
+
+/* ---------- UI: build screen ---------- */
+
+let playerPattern = null;
+let aiPattern = null;
+let aiPicks = null;
+let aiArrangement = null;
+
+function randomAiPicks() {
+  const pick = (opts) => opts[Math.floor(Math.random() * opts.length)];
+  return { drums: pick(Object.keys(DRUM_PRESETS)), chords: pick(Object.keys(CHORD_PRESETS)), bass: pick(BASS_STYLES), melody: pick(Object.keys(MELODY_PRESETS)) };
+}
+
+function getDifficulty(key) { return DIFFICULTIES.find(d => d.key === key) || DIFFICULTIES[0]; }
+function arrangementForDifficulty(key) { return JSON.parse(JSON.stringify(getDifficulty(key).template)); }
+
+function renderDiffPills() {
+  const wrap = document.getElementById("diff-pills");
+  wrap.innerHTML = "";
+  DIFFICULTIES.forEach(d => {
+    const pill = document.createElement("div");
+    pill.className = "pill" + (state.aiDifficulty === d.key ? " sel" : "");
+    pill.textContent = d.label;
+    pill.onclick = () => { state.aiDifficulty = d.key; renderDiffPills(); };
+    wrap.appendChild(pill);
+  });
+  document.getElementById("diff-blurb").textContent = getDifficulty(state.aiDifficulty).blurb;
+}
+
+function renderSectionPills() {
+  const wrap = document.getElementById("section-pills");
+  wrap.innerHTML = "";
+  SECTIONS.forEach((s, i) => {
+    const p = document.createElement("div");
+    p.className = "section-pill" + (i === state.currentSection ? " active" : "");
+    p.innerHTML = `<div class="sname">${s.name}</div><div class="srange">${s.range}</div>`;
+    wrap.appendChild(p);
+  });
+}
+
+function renderPlayhead() {
+  const wrap = document.getElementById("playhead");
+  wrap.innerHTML = "";
+  for (let i = 0; i < 16; i++) {
+    const d = document.createElement("div");
+    d.className = "step";
+    d.id = "ph-" + i;
+    wrap.appendChild(d);
+  }
+}
+
+function currentActiveMask() {
+  const sec = state.currentSection;
+  return {
+    drums: state.arrangement.drums[sec], chords: state.arrangement.chords[sec],
+    bass: state.arrangement.bass[sec], melody: state.arrangement.melody[sec],
+  };
+}
+
+function renderArrGrid() {
+  const wrap = document.getElementById("arr-grid");
+  wrap.innerHTML = "";
+  ROWS.forEach(row => {
+    const r = document.createElement("div");
+    r.className = "arr-row";
+    const label = document.createElement("div");
+    label.className = "rlabel";
+    label.innerHTML = `<span class="dot" style="background:${row.icon}"></span>${row.label}${state.sampleAssign[row.key] ? " \u{1F3B5}" : ""}`;
+    r.appendChild(label);
+    const cells = document.createElement("div");
+    cells.className = "arr-cells";
+    for (let sec = 0; sec < 3; sec++) {
+      const cell = document.createElement("div");
+      cell.className = "arr-cell" + (state.arrangement[row.key][sec] ? " on" : "");
+      cell.onclick = () => {
+        state.arrangement[row.key][sec] = !state.arrangement[row.key][sec];
+        renderArrGrid();
+        updateLiveHype();
+        setSampleVolumesForSection(currentActiveMask());
+      };
+      cells.appendChild(cell);
+    }
+    r.appendChild(cells);
+    const vu = document.createElement("div");
+    vu.className = "vu";
+    vu.innerHTML = `<div class="fill" id="vu-${row.key}"></div>`;
+    r.appendChild(vu);
+    wrap.appendChild(r);
+  });
+}
+
+function pulseVU(layer) {
+  const el = document.getElementById("vu-" + layer);
+  if (!el) return;
+  el.style.height = "100%";
+  setTimeout(() => { el.style.height = "15%"; }, 130);
+}
+
+function highlightPlayhead(step) {
+  document.querySelectorAll(".playhead .step.cur").forEach(el => el.classList.remove("cur"));
+  const el = document.getElementById("ph-" + step);
+  if (el) el.classList.add("cur");
+}
+
+function updateLiveHype() {
+  const active = currentActiveMask();
+  const score = Math.max(5, Math.min(100, Math.round(scoreSection(playerPattern, active, state.sampleAssign))));
+  document.getElementById("meter-live").style.width = score + "%";
+  document.getElementById("live-hype-num").textContent = score;
+}
+
+/* ---------- screen switching ---------- */
+
+function showScreen(id) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+}
+
+/* ---------- flow ---------- */
+
+document.getElementById("btn-start").onclick = async () => {
+  await Tone.start();
+  initAudio();
+  ensureSamplePlayers();
+  if (state.mode === "advanced") {
+    playerPattern = buildAdvancedPattern(state.advanced);
+    Tone.Transport.swing = state.advanced.drums.swing / 100;
+    applyAdvancedFX();
+  } else {
+    playerPattern = buildPattern(state.picks);
+    Tone.Transport.swing = 0;
+    applyDefaultFX();
+  }
+  state.timeLeft = 30;
+  state.currentSection = 0;
+  showScreen("screen-build");
+  renderSectionPills();
+  renderPlayhead();
+  renderArrGrid();
+  updateLiveHype();
+  setSampleVolumesForSection(currentActiveMask());
+  startLiveBuildLoop(playerPattern, (step, active) => {
+    highlightPlayhead(step);
+    ["drums","chords","bass","melody"].forEach(layer => {
+      if (active[layer] && layerHitsAt(playerPattern, step, layer)) pulseVU(layer);
+    });
+  });
+  runTimer();
+};
+
+function runTimer() {
+  const circle = document.getElementById("timer-circle");
+  const numEl = document.getElementById("timer-num");
+  const FULL = 220;
+  clearInterval(state.timerHandle);
+  state.timerHandle = setInterval(() => {
+    state.timeLeft -= 1;
+    numEl.textContent = state.timeLeft;
+    circle.setAttribute("stroke-dashoffset", FULL * (1 - state.timeLeft / 30));
+    const elapsed = 30 - state.timeLeft;
+    const newSection = Math.min(2, Math.floor(elapsed / 10));
+    if (newSection !== state.currentSection) {
+      state.currentSection = newSection;
+      renderSectionPills();
+      updateLiveHype();
+      setSampleVolumesForSection(currentActiveMask());
+    }
+    if (state.timeLeft <= 0) {
+      clearInterval(state.timerHandle);
+      goToReveal();
+    }
+  }, 1000);
+}
+
+function goToReveal() {
+  stopSequence();
+  Tone.Transport.swing = 0;
+  showScreen("screen-reveal");
+  document.getElementById("meter-you").style.width = "0%";
+  document.getElementById("meter-ai").style.width = "0%";
+
+  aiPicks = randomAiPicks();
+  aiPattern = buildPattern(aiPicks);
+  aiArrangement = arrangementForDifficulty(state.aiDifficulty);
+  const tierLabel = getDifficulty(state.aiDifficulty).label;
+  document.querySelector("#screen-reveal .vs-wrap:last-of-type .vs-label").textContent = "AI OPPONENT · " + tierLabel.toUpperCase();
+
+  const yourScore = scoreArrangement(playerPattern, state.arrangement, state.sampleAssign);
+  const aiScore = scoreArrangement(aiPattern, aiArrangement);
+
+  applyDefaultFX();
+  document.getElementById("reveal-status").textContent = "Your intro...";
+  playSectionsForSide(playerPattern, state.arrangement, (label, sec, active) => {
+    document.getElementById("reveal-status").textContent = "Your " + label.toLowerCase() + "...";
+    setSampleVolumesForSection(active);
+  }, () => {
+    muteAllSamples();
+    document.getElementById("meter-you").style.width = yourScore + "%";
+    setTimeout(() => {
+      document.getElementById("reveal-status").textContent = tierLabel + " AI's intro...";
+      playSectionsForSide(aiPattern, aiArrangement, (label) => {
+        document.getElementById("reveal-status").textContent = tierLabel + " AI's " + label.toLowerCase() + "...";
+      }, () => {
+        document.getElementById("meter-ai").style.width = aiScore + "%";
+        setTimeout(() => showResult(yourScore, aiScore, tierLabel), 1000);
+      });
+    }, 600);
+  }, state.sampleAssign);
+}
+
+function showResult(yourScore, aiScore, tierLabel) {
+  showScreen("screen-result");
+  const banner = document.getElementById("result-banner");
+  const title = document.getElementById("result-title");
+  document.getElementById("score-you").textContent = yourScore;
+  document.getElementById("score-ai").textContent = aiScore;
+  const win = yourScore >= aiScore;
+  banner.className = "result-banner " + (win ? "win" : "lose");
+  title.textContent = win ? ("You beat the " + tierLabel + " AI!") : ("The " + tierLabel + " AI beat you");
+  recordScore(state.aiDifficulty, yourScore);
+}
+
+document.getElementById("btn-rematch").onclick = () => {
+  document.getElementById("btn-start").click();
+};
+document.getElementById("btn-resetup").onclick = () => {
+  stopAllSamplePlayers();
+  ensureSamplePlayers();
+  showScreen("screen-setup");
+};
+
+/* ---------- UI: dedicated Extract Stems screen ---------- */
+
+function openExtractScreen() {
+  showScreen("screen-extract");
+  renderExtractSourceSelect();
+}
+
+function openExtractScreenFor(item) {
+  showScreen("screen-extract");
+  renderExtractSourceSelect();
+  document.getElementById("extract-source-select").value = item.id;
+  renderExtractBands();
+}
+
+function renderExtractSourceSelect() {
+  const select = document.getElementById("extract-source-select");
+  select.innerHTML = "";
+  const sources = state.library.filter(i => !i.isStem);
+  if (sources.length === 0) {
+    const opt = document.createElement("option");
+    opt.textContent = "No tracks uploaded yet — upload one below";
+    select.appendChild(opt);
+  } else {
+    sources.forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = s.id; opt.textContent = s.name;
+      select.appendChild(opt);
+    });
+  }
+  select.onchange = renderExtractBands;
+  renderExtractBands();
+}
+
+function renderExtractBands() {
+  const wrap = document.getElementById("extract-bands");
+  wrap.innerHTML = "";
+  const select = document.getElementById("extract-source-select");
+  const source = state.library.find(i => i.id === select.value);
+  if (!source) {
+    wrap.innerHTML = '<div class="hint">Upload or pick a track above to see its stem bands.</div>';
+    return;
+  }
+  if (source.status !== "ready") {
+    wrap.innerHTML = `<div class="hint">${source.status === "checking" ? "Checking format..." : "This file couldn't be read — try mp3 or wav instead."}</div>`;
+    return;
+  }
+  // make sure the 4 derived band entries exist for this source (they share its playback engine)
+  Object.keys(BAND_DEFS).forEach(bandKey => {
+    if (!state.library.some(i => i.sourceId === source.id && i.band === bandKey)) {
+      state.library.push({ id:genId(), name:source.name, objectUrl:source.objectUrl, isStem:true, sourceId:source.id, band:bandKey, engine:source.engine, status:"ready" });
+    }
+  });
+  Object.keys(BAND_DEFS).forEach(bandKey => {
+    const bd = BAND_DEFS[bandKey];
+    const stemItem = state.library.find(i => i.sourceId === source.id && i.band === bandKey);
+    const assignedLayer = Object.keys(state.sampleAssign).find(l => state.sampleAssign[l] === stemItem.id) || "";
+    const card = document.createElement("div");
+    card.className = "lib-item";
+    card.style.flexDirection = "column";
+    card.style.alignItems = "stretch";
+    card.style.gap = "8px";
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div class="lib-name" style="white-space:normal">${bd.label}</div>
+        <button class="lib-btn extract-preview" title="Preview this band">\u25B6</button>
+      </div>
+      <select class="lib-select extract-assign" style="width:100%"></select>
+    `;
+    const sel = card.querySelector(".extract-assign");
+    [["","Assign to..."],["drums","Drums"],["chords","Chords"],["bass","Bass"],["melody","Melody"]].forEach(([val,label]) => {
+      const opt = document.createElement("option");
+      opt.value = val; opt.textContent = label;
+      if (val === assignedLayer) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.onchange = () => assignSample(stemItem.id, sel.value || null);
+    card.querySelector(".extract-preview").onclick = () => previewBand(source, bandKey);
+    wrap.appendChild(card);
+  });
+}
+
+document.getElementById("open-extract-btn").onclick = () => openExtractScreen();
+
+document.getElementById("extract-upload-btn").onclick = () => document.getElementById("extract-file-input").click();
+document.getElementById("extract-file-input").onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const item = { id:genId(), name:file.name, objectUrl:URL.createObjectURL(file), isStem:false, sourceId:null, band:null, engine:null, status:"checking" };
+  state.library.push(item);
+  e.target.value = "";
+  renderExtractSourceSelect();
+  document.getElementById("extract-source-select").value = item.id;
+  renderExtractBands();
+  renderLibrary();
+  probeFormat(item, () => {
+    renderExtractBands();
+    renderLibrary();
+  });
+};
+
+document.getElementById("btn-extract-done").onclick = () => {
+  renderLibrary();
+  renderSetupRows();
+  if (state.mode === "advanced") renderAdvancedEditor();
+  showScreen("screen-setup");
+};
+
+renderModeToggle();
+renderSetupRows();
+renderDiffPills();
+renderLibrary();
+
+
+/* ==================================================================
+   PROFILE, WALLET, AND LEADERBOARD — wired to the deployed backend
+   (sekudbeat-beatbattle-monad). Same-origin, so relative fetch() paths
+   work with no CORS setup, and the session cookie rides along with
+   credentials: "include".
+   ================================================================== */
+
+let walletAddress = null;
+let myProfile = null;   // { address, name, avatarUrl }
+let myScores = {};      // { newbie: score|null, rookie: ..., pro: ..., legend: ... }
+let backendReachable = true;
+
+function shortAddress(addr) { return addr ? addr.slice(0,6) + "…" + addr.slice(-4) : ""; }
+
+async function api(path, opts) {
+  opts = opts || {};
+  const res = await fetch(path, Object.assign({ credentials: "include" }, opts));
+  backendReachable = true;
+  return res;
+}
+
+async function connectWallet() {
+  if (!window.ethereum) {
+    alert("MetaMask not detected. Install it from metamask.io, then try again.");
+    return;
+  }
+  try {
+    const accounts = await window.ethereum.request({ method:"eth_requestAccounts" });
+    const address = accounts[0];
+
+    const nonceRes = await api("/api/auth/nonce", {
+      method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ address }),
+    });
+    const { message } = await nonceRes.json();
+
+    const signature = await window.ethereum.request({
+      method:"personal_sign", params:[message, address],
+    });
+
+    const verifyRes = await api("/api/auth/verify", {
+      method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ address, signature }),
+    });
+    if (!verifyRes.ok) { alert("Sign-in failed — the signature didn't check out."); return; }
+
+    walletAddress = address.toLowerCase();
+    myProfile = await api("/api/profile/me").then(r => r.json());
+    await refreshMyScores();
+    renderProfile();
+  } catch (e) {
+    backendReachable = false;
+    alert("Connection was cancelled, or the backend couldn't be reached: " + e.message);
+  }
+}
+
+if (window.ethereum) {
+  window.ethereum.on && window.ethereum.on("accountsChanged", async (accounts) => {
+    if (!accounts[0]) { walletAddress = null; myProfile = null; myScores = {}; renderProfile(); return; }
+    walletAddress = accounts[0].toLowerCase();
+    // a real account switch needs a fresh sign-in — the session cookie is tied to the old address
+    myProfile = null;
+    renderProfile();
+  });
+}
+
+function fileToResizedDataUrl(file, size) {
+  size = size || 96;
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        const s = Math.min(img.width, img.height);
+        const sx = (img.width - s) / 2, sy = (img.height - s) / 2;
+        ctx.drawImage(img, sx, sy, s, s, 0, 0, size, size);
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadAvatar(dataUrl) {
+  const res = await api("/api/avatar", {
+    method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ dataUrl }),
+  });
+  return res.json();
+}
+
+async function recordScore(difficultyKey, score) {
+  if (!walletAddress) return;
+  try {
+    await api("/api/score", {
+      method:"POST", headers:{ "Content-Type":"application/json" },
+      body:JSON.stringify({ difficulty:difficultyKey, score }),
+    });
+    await refreshMyScores();
+  } catch (e) { backendReachable = false; }
+}
+
+async function refreshMyScores() {
+  if (!walletAddress) { myScores = {}; return; }
+  const out = {};
+  for (const d of DIFFICULTIES) {
+    try {
+      const res = await api(`/api/leaderboard?difficulty=${d.key}&limit=100`);
+      const data = await res.json();
+      const mine = (data.entries || []).find(e => e.address === walletAddress);
+      out[d.key] = mine ? mine.score : null;
+    } catch (e) { backendReachable = false; out[d.key] = null; }
+  }
+  myScores = out;
+}
+
+function renderProfile() {
+  document.getElementById("storage-banner-profile").textContent = backendReachable
+    ? "Shared leaderboard — live on sekudbeat-beatbattle-monad, visible to every player."
+    : "Couldn't reach the backend — check your connection and try again.";
+  const body = document.getElementById("profile-body");
+  if (!walletAddress || !myProfile) {
+    body.innerHTML = "";
+    const btn = document.createElement("button");
+    btn.className = "btn-primary";
+    btn.textContent = "Connect MetaMask ↗";
+    btn.onclick = connectWallet;
+    body.appendChild(btn);
+    return;
+  }
+  body.innerHTML = `
+    <div class="profile-card">
+      <div class="avatar" id="avatar-display">${myProfile.avatarUrl ? `<img src="${myProfile.avatarUrl}">` : "\u{1F464}"}</div>
+      <div style="flex:1">
+        <div class="profile-addr">${shortAddress(walletAddress)}</div>
+        <input type="text" class="profile-name-input" id="profile-name-input" placeholder="Display name (optional)" value="${myProfile.name || ""}">
+      </div>
+    </div>
+    <input type="file" id="avatar-file-input" accept="image/*" style="display:none">
+    <div id="score-grid"></div>
+  `;
+  document.getElementById("avatar-display").onclick = () => document.getElementById("avatar-file-input").click();
+  document.getElementById("avatar-file-input").onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const dataUrl = await fileToResizedDataUrl(file, 96);
+    myProfile = await uploadAvatar(dataUrl);
+    renderProfile();
+  };
+  document.getElementById("profile-name-input").onchange = async (e) => {
+    const res = await api("/api/profile/me", {
+      method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ name:e.target.value.slice(0,24) }),
+    });
+    myProfile = await res.json();
+  };
+  const grid = document.getElementById("score-grid");
+  grid.className = "score-grid";
+  grid.innerHTML = '<div class="hint">Loading your scores...</div>';
+  refreshMyScores().then(() => {
+    grid.innerHTML = "";
+    DIFFICULTIES.forEach(d => {
+      const cell = document.createElement("div");
+      cell.className = "score-cell";
+      const val = myScores[d.key];
+      cell.innerHTML = `<div class="sc-label">${d.label}</div><div class="sc-num">${val == null ? "—" : val}</div>`;
+      grid.appendChild(cell);
+    });
+  });
+}
+
+function renderLbDiffPills() {
+  const wrap = document.getElementById("lb-diff-pills");
+  wrap.innerHTML = "";
+  DIFFICULTIES.forEach(d => {
+    const pill = document.createElement("div");
+    pill.className = "pill" + (state.lbDifficulty === d.key ? " sel" : "");
+    pill.textContent = d.label;
+    pill.onclick = () => { state.lbDifficulty = d.key; renderLbDiffPills(); renderLeaderboard(); };
+    wrap.appendChild(pill);
+  });
+}
+
+async function renderLeaderboard() {
+  const list = document.getElementById("lb-list");
+  list.innerHTML = '<div class="hint">Loading...</div>';
+  const key = state.lbDifficulty || "rookie";
+  try {
+    const res = await api(`/api/leaderboard?difficulty=${key}&limit=50`);
+    const data = await res.json();
+    document.getElementById("storage-banner-lb").textContent =
+      "Shared leaderboard — live on sekudbeat-beatbattle-monad, visible to every player.";
+    const entries = data.entries || [];
+    if (entries.length === 0) {
+      list.innerHTML = '<div class="hint">No scores recorded yet for this tier — connect your profile and play a round.</div>';
+      return;
+    }
+    list.innerHTML = "";
+    entries.forEach((p, i) => {
+      const row = document.createElement("div");
+      row.className = "lb-row" + (p.address === walletAddress ? " me" : "");
+      row.innerHTML = `
+        <div class="lb-rank">${i+1}</div>
+        <div class="lb-avatar">${p.avatarUrl ? `<img src="${p.avatarUrl}">` : "\u{1F464}"}</div>
+        <div class="lb-name">${p.name || shortAddress(p.address)}</div>
+        <div class="lb-score">${p.score}</div>
+      `;
+      list.appendChild(row);
+    });
+  } catch (e) {
+    backendReachable = false;
+    document.getElementById("storage-banner-lb").textContent = "Couldn't reach the backend — check your connection and try again.";
+    list.innerHTML = '<div class="hint">Couldn\u2019t load the leaderboard.</div>';
+  }
+}
+
+document.getElementById("open-profile-btn").onclick = () => { showScreen("screen-profile"); renderProfile(); };
+document.getElementById("open-leaderboard-btn").onclick = () => { showScreen("screen-leaderboard"); if (!state.lbDifficulty) state.lbDifficulty = "rookie"; renderLbDiffPills(); renderLeaderboard(); };
+document.getElementById("btn-profile-back").onclick = () => showScreen("screen-setup");
+document.getElementById("btn-lb-refresh").onclick = () => renderLeaderboard();
+document.getElementById("btn-lb-back").onclick = () => showScreen("screen-setup");
+</script>
+</body>
+</html>
