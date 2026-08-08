@@ -210,6 +210,7 @@
       <div class="adv-title">Wallet, leaderboard &amp; minting</div>
       <div class="tut-line">• Connect MetaMask (Profile tab) to save your best score per difficulty to the shared leaderboard — everyone's scores are recomputed and verified server-side, not just trusted from the browser.</div>
       <div class="tut-line">• After a round, you can mint your beat as an NFT on <b>Monad testnet</b> — you own it, with a 5% creator royalty baked in for any future resale.</div>
+      <div class="tut-line">• Right after minting you can list it for sale in MON on the <b>🛒 Marketplace</b> tab — a 5% creator royalty and 2.5% platform fee are paid automatically out of every sale, the rest goes to the seller.</div>
     </div>
 
     <button class="btn-primary" id="btn-tutorial-done">Got it — let's play ↗</button>
@@ -225,6 +226,7 @@
     <div class="header-row">
       <button class="icon-btn" id="open-profile-btn">👤 Profile</button>
       <button class="icon-btn" id="open-leaderboard-btn">🏆 Leaderboard</button>
+      <button class="icon-btn" id="open-marketplace-btn">🛒 Marketplace</button>
       <button class="icon-btn" id="open-tutorial-btn">❓ How to play</button>
     </div>
 
@@ -324,6 +326,7 @@
     <button class="btn-secondary" id="btn-resetup">New setup</button>
     <button class="btn-secondary" id="btn-mint-chart" style="margin-top:8px">🪙 Mint this beat (Monad testnet)</button>
     <div class="hint" id="mint-status" style="margin-top:8px"></div>
+    <div id="mint-list-form"></div>
   </div>
 
   <!-- SCREEN 5: EXTRACT STEMS -->
@@ -361,6 +364,15 @@
     <div id="ghost-list"></div>
     <button class="btn-secondary" id="btn-lb-refresh">Refresh</button>
     <button class="btn-secondary" id="btn-lb-back">Back to setup</button>
+  </div>
+
+  <!-- SCREEN: MARKETPLACE -->
+  <div class="screen" id="screen-marketplace">
+    <h1 class="logo" style="font-size:18px">MARKETPLACE</h1>
+    <div class="storage-banner">Buy and sell minted charts in MON, on Monad testnet — a 5% creator royalty and 2.5% platform fee are paid automatically on every sale.</div>
+    <div id="marketplace-list" style="margin-top:14px"></div>
+    <button class="btn-secondary" id="btn-marketplace-refresh">Refresh</button>
+    <button class="btn-secondary" id="btn-marketplace-back">Back to setup</button>
   </div>
 
 </div>
@@ -1815,6 +1827,11 @@ async function mintCurrentChart() {
     statusEl.textContent = "Waiting for confirmation… (tx " + tx.hash.slice(0, 10) + "…)";
     const receipt = await tx.wait();
     statusEl.innerHTML = `Minted ↗ <a href="${info.explorerUrl}/tx/${receipt.hash}" target="_blank" rel="noopener">view on explorer</a>`;
+
+    const mintedEvent = receipt.logs
+      .map((log) => { try { return contract.interface.parseLog(log); } catch (e) { return null; } })
+      .find((e) => e && e.name === "ChartMinted");
+    if (mintedEvent && info.marketplace) renderListForm(mintedEvent.args.tokenId, info);
   } catch (e) {
     const reason = (e && (e.shortMessage || e.reason)) || (e && e.message) || "unknown error";
     if (reason.includes("already minted")) {
@@ -1830,6 +1847,126 @@ async function mintCurrentChart() {
 }
 
 document.getElementById("btn-mint-chart").onclick = mintCurrentChart;
+
+/* ---------- listing a freshly-minted chart for sale ---------- */
+
+function renderListForm(tokenId, info) {
+  const wrap = document.getElementById("mint-list-form");
+  wrap.innerHTML = `
+    <div class="row" style="margin-top:10px">
+      <div class="row-label">List this for sale on the marketplace</div>
+      <div style="display:flex; gap:8px; align-items:center">
+        <input type="number" id="list-price-input" placeholder="Price in MON" min="0" step="0.01"
+          style="flex:1; background:#15151F; border:1px solid #26263A; color:#fff; border-radius:6px; padding:8px 10px; font-size:13px;">
+        <button class="btn-secondary" id="btn-list-chart" style="margin-top:0; white-space:nowrap">List for sale</button>
+      </div>
+      <div class="hint" id="list-status" style="margin-top:6px"></div>
+    </div>`;
+  document.getElementById("btn-list-chart").onclick = () => listChartForSale(tokenId, info);
+}
+
+async function listChartForSale(tokenId, info) {
+  const priceInput = document.getElementById("list-price-input");
+  const statusEl = document.getElementById("list-status");
+  const btn = document.getElementById("btn-list-chart");
+  const priceStr = priceInput.value.trim();
+  if (!priceStr || Number(priceStr) <= 0) { statusEl.textContent = "Enter a price greater than 0."; return; }
+
+  btn.disabled = true;
+  try {
+    const priceWei = ethers.parseEther(priceStr);
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const chartContract = new ethers.Contract(info.address, info.abi, signer);
+    const marketContract = new ethers.Contract(info.marketplace.address, info.marketplace.abi, signer);
+
+    statusEl.textContent = "Approving the marketplace to transfer this chart… (confirm in MetaMask)";
+    const approveTx = await chartContract.approve(info.marketplace.address, tokenId);
+    await approveTx.wait();
+
+    statusEl.textContent = "Listing for sale… (confirm in MetaMask)";
+    const listTx = await marketContract.list(tokenId, priceWei);
+    await listTx.wait();
+
+    statusEl.textContent = `Listed for ${priceStr} MON ✓ — visible on the Marketplace tab.`;
+    priceInput.disabled = true;
+  } catch (e) {
+    const reason = (e && (e.shortMessage || e.reason)) || (e && e.message) || "unknown error";
+    statusEl.textContent = (e && (e.code === 4001 || e.code === "ACTION_REJECTED")) ? "Listing cancelled." : "Listing failed: " + reason;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---------- browsing & buying the marketplace ---------- */
+
+async function renderMarketplace() {
+  const wrap = document.getElementById("marketplace-list");
+  wrap.innerHTML = '<div class="hint">Loading listings…</div>';
+  try {
+    const res = await api("/api/marketplace");
+    const data = await res.json();
+    const listings = data.listings || [];
+    if (listings.length === 0) {
+      wrap.innerHTML = '<div class="hint">Nothing listed yet — mint a beat and list it for sale to be the first.</div>';
+      return;
+    }
+    wrap.innerHTML = "";
+    listings.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "lb-row";
+      row.innerHTML = `
+        <div style="flex:1">
+          <div style="font-size:13px; color:#D6D6EA">${item.name}${item.difficulty ? " · " + item.difficulty : ""}${item.score != null ? " · score " + item.score : ""}</div>
+          <div class="hint" style="text-align:left; margin-top:2px">by ${shortAddress(item.creator || item.seller)} — <b style="color:#D6D6EA">${item.priceMon} MON</b></div>
+        </div>`;
+      const btn = document.createElement("button");
+      btn.className = "lib-btn";
+      const isOwnListing = walletAddress && item.seller.toLowerCase() === walletAddress.toLowerCase();
+      btn.textContent = isOwnListing ? "Cancel" : "Buy";
+      btn.onclick = () => (isOwnListing ? cancelListing(item.tokenId) : buyChart(item.tokenId, item.priceWei, item.priceMon));
+      row.appendChild(btn);
+      wrap.appendChild(row);
+    });
+  } catch (e) {
+    wrap.innerHTML = '<div class="hint">Couldn’t load the marketplace.</div>';
+  }
+}
+
+async function buyChart(tokenId, priceWei, priceMon) {
+  if (!window.ethereum) { alert("MetaMask not detected."); return; }
+  try {
+    const info = await getMintContractInfo();
+    await ensureMonadNetwork(info);
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const marketContract = new ethers.Contract(info.marketplace.address, info.marketplace.abi, signer);
+    const tx = await marketContract.buy(tokenId, { value: BigInt(priceWei) });
+    await tx.wait();
+    alert(`Bought for ${priceMon} MON ✓`);
+    renderMarketplace();
+  } catch (e) {
+    const reason = (e && (e.shortMessage || e.reason)) || (e && e.message) || "unknown error";
+    if (!(e && (e.code === 4001 || e.code === "ACTION_REJECTED"))) alert("Purchase failed: " + reason);
+  }
+}
+
+async function cancelListing(tokenId) {
+  if (!window.ethereum) { alert("MetaMask not detected."); return; }
+  try {
+    const info = await getMintContractInfo();
+    await ensureMonadNetwork(info);
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const marketContract = new ethers.Contract(info.marketplace.address, info.marketplace.abi, signer);
+    const tx = await marketContract.cancelListing(tokenId);
+    await tx.wait();
+    renderMarketplace();
+  } catch (e) {
+    const reason = (e && (e.shortMessage || e.reason)) || (e && e.message) || "unknown error";
+    if (!(e && (e.code === 4001 || e.code === "ACTION_REJECTED"))) alert("Cancel failed: " + reason);
+  }
+}
 
 function renderProfile() {
   document.getElementById("storage-banner-profile").textContent = backendReachable
@@ -1936,6 +2073,9 @@ document.getElementById("open-leaderboard-btn").onclick = () => { showScreen("sc
 document.getElementById("btn-profile-back").onclick = () => showScreen("screen-setup");
 document.getElementById("btn-lb-refresh").onclick = () => renderLeaderboard();
 document.getElementById("btn-lb-back").onclick = () => showScreen("screen-setup");
+document.getElementById("open-marketplace-btn").onclick = () => { showScreen("screen-marketplace"); renderMarketplace(); };
+document.getElementById("btn-marketplace-refresh").onclick = () => renderMarketplace();
+document.getElementById("btn-marketplace-back").onclick = () => showScreen("screen-setup");
 </script>
 <script src="/ghost-features.js"></script>
 </body>
