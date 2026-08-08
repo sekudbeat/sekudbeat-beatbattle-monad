@@ -1906,12 +1906,18 @@ async function renderMarketplace() {
   try {
     const res = await api("/api/marketplace");
     const data = await res.json();
+    if (!res.ok) { wrap.innerHTML = '<div class="hint">' + (data.error || "Couldn’t load the marketplace.") + '</div>'; return; }
     const listings = data.listings || [];
+    // The backend indexes marketplace activity from chain events in bounded
+    // batches per request (Monad's public RPC is slow enough per-call that
+    // scanning everything in one shot could time out) — right after a long
+    // gap this can take a couple of refreshes to fully catch up.
+    const catchUpNote = data.caughtUp ? "" : '<div class="hint">Still indexing recent activity — hit Refresh in a few seconds for the latest.</div>';
     if (listings.length === 0) {
-      wrap.innerHTML = '<div class="hint">Nothing listed yet — mint a beat and list it for sale to be the first.</div>';
+      wrap.innerHTML = '<div class="hint">Nothing listed yet — mint a beat and list it for sale to be the first.</div>' + catchUpNote;
       return;
     }
-    wrap.innerHTML = "";
+    wrap.innerHTML = catchUpNote;
     listings.forEach((item) => {
       const row = document.createElement("div");
       row.className = "lb-row";
